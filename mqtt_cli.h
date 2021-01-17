@@ -233,22 +233,14 @@ _append_padding(mqtt_cli_t *m, mqtt_packet_t *pkt) {
         mp->type = pkt->f.bits.type;
         mqtt_str_set(&mp->b, &b);
         mp->t_send = m->t.now;
-        mp->ttl = MQTT_CLI_PACKET_TTL;
         switch (pkt->f.bits.type) {
-        case MQTT_SUBSCRIBE:
-            mp->packet_id = pkt->v.subscribe.packet_id;
-            break;
-        case MQTT_UNSUBSCRIBE:
-            mp->packet_id = pkt->v.unsubscribe.packet_id;
-            break;
         case MQTT_PUBLISH:
             mp->packet_id = pkt->v.publish.packet_id;
-            break;
-        case MQTT_PUBREC:
-            mp->packet_id = pkt->v.pubrec.packet_id;
+            mp->ttl = MQTT_CLI_PACKET_TTL;
             break;
         case MQTT_PUBREL:
             mp->packet_id = pkt->v.pubrel.packet_id;
+            mp->ttl = MQTT_CLI_PACKET_TTL;
             break;
         default:
             break;
@@ -305,12 +297,8 @@ _handle_packet(mqtt_cli_t *m, mqtt_packet_t *pkt) {
     rc = 0;
     switch (pkt->f.bits.type) {
     case MQTT_CONNACK:
-        if (!_erase_padding(m, MQTT_CONNECT, 0)) {
-            if (m->cb.connack) {
-                m->cb.connack(m, m->ud, pkt);
-            }
-        } else {
-            rc = -1;
+        if (m->cb.connack) {
+            m->cb.connack(m, m->ud, pkt);
         }
         break;
     case MQTT_PUBLISH:
@@ -361,31 +349,19 @@ _handle_packet(mqtt_cli_t *m, mqtt_packet_t *pkt) {
         }
         break;
     case MQTT_SUBACK:
-        if (!_erase_padding(m, MQTT_SUBSCRIBE, pkt->v.suback.packet_id)) {
-            if (m->cb.suback) {
-                m->cb.suback(m, m->ud, pkt);
-            }
-        } else {
-            rc = -1;
+        if (m->cb.suback) {
+            m->cb.suback(m, m->ud, pkt);
         }
         break;
     case MQTT_UNSUBACK:
-        if (!_erase_padding(m, MQTT_UNSUBSCRIBE, pkt->v.unsuback.packet_id)) {
-            if (m->cb.unsuback) {
-                m->cb.unsuback(m, m->ud, pkt);
-            }
-        } else {
-            rc = -1;
+        if (m->cb.unsuback) {
+            m->cb.unsuback(m, m->ud, pkt);
         }
         break;
     case MQTT_PINGRESP:
         m->t.ping = 0;
-        if (!_erase_padding(m, MQTT_PINGREQ, 0)) {
-            if (m->cb.pingresp) {
-                m->cb.pingresp(m, m->ud, pkt);
-            }
-        } else {
-            rc = -1;
+        if (m->cb.pingresp) {
+            m->cb.pingresp(m, m->ud, pkt);
         }
         break;
     default:
@@ -562,17 +538,26 @@ mqtt_cli_outgoing(mqtt_cli_t *m, mqtt_str_t *outgoing) {
     }
 
     if (outgoing->n > 0) {
+        mqtt_cli_packet_t **pmp;
+
         outgoing->s = malloc(outgoing->n);
         outgoing->n = 0;
 
-        mp = m->padding;
-        while (mp) {
+        pmp = &m->padding;
+        while (*pmp) {
+            mp = *pmp;
             if (mp->wait_ack == 0) {
                 mqtt_str_concat(outgoing, &mp->b);
-                mp->wait_ack = 1;
-                mp->t_send = m->t.now;
+                if (mp->ttl == 0) {
+                    *pmp = mp->next;
+                    mqtt_str_free(&mp->b);
+                    free(mp);
+                } else {
+                    mp->wait_ack = 1;
+                    mp->t_send = m->t.now;
+                }
             }
-            mp = mp->next;
+            pmp = &mp->next;
         }
         m->t.send = m->t.now;
     }
