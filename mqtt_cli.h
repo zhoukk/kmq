@@ -170,9 +170,8 @@ _check_padding(mqtt_cli_t *m) {
     rc = 0;
     mp = m->padding;
     while (mp) {
-        if (m->t.now - mp->t_send >= MQTT_CLI_PACKET_TIMEOUT * 1000) {
-            if (mp->ttl) {
-                --mp->ttl;
+        if (mp->ttl > 0 && m->t.now - mp->t_send >= MQTT_CLI_PACKET_TIMEOUT * 1000) {
+            if (--mp->ttl > 0) {
                 mp->wait_ack = 0;
                 if (mp->type == MQTT_PUBLISH) {
                     ((mqtt_fixed_header_t *)mp->b.s)->bits.dup = 1;
@@ -333,11 +332,7 @@ _handle_packet(mqtt_cli_t *m, mqtt_packet_t *pkt) {
         }
         break;
     case MQTT_PUBREL:
-        if (!_erase_padding(m, MQTT_PUBREC, pkt->v.pubrel.packet_id)) {
-            rc = _send_puback(m, MQTT_PUBCOMP, pkt->v.pubrel.packet_id);
-        } else {
-            rc = -1;
-        }
+        rc = _send_puback(m, MQTT_PUBCOMP, pkt->v.pubrel.packet_id);
         break;
     case MQTT_PUBCOMP:
         if (!_erase_padding(m, MQTT_PUBREL, pkt->v.pubcomp.packet_id)) {
