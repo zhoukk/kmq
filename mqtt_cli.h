@@ -235,7 +235,8 @@ _append_padding(mqtt_cli_t *m, mqtt_packet_t *pkt) {
         switch (pkt->f.bits.type) {
         case MQTT_PUBLISH:
             mp->packet_id = pkt->v.publish.packet_id;
-            mp->ttl = MQTT_CLI_PACKET_TTL;
+            if (pkt->f.bits.qos > MQTT_QOS_0)
+                mp->ttl = MQTT_CLI_PACKET_TTL;
             break;
         case MQTT_PUBREL:
             mp->packet_id = pkt->v.pubrel.packet_id;
