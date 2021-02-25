@@ -548,10 +548,10 @@ mqtt_cli_outgoing(mqtt_cli_t *m, mqtt_str_t *outgoing) {
                     *pmp = mp->next;
                     mqtt_str_free(&mp->b);
                     free(mp);
-                } else {
-                    mp->wait_ack = 1;
-                    mp->t_send = m->t.now;
+		    continue;
                 }
+                mp->wait_ack = 1;
+                mp->t_send = m->t.now;
             }
             pmp = &mp->next;
         }
