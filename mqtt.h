@@ -2699,7 +2699,7 @@ __process(mqtt_parser_t *parser) {
 
     pkt = &parser->pkt;
     pkt->ver = parser->version;
-    type = pkt->f.bits.type;
+    type = (mqtt_packet_type_t)pkt->f.bits.type;
     mqtt_str_set(&b, &pkt->b);
     switch (type) {
     case MQTT_CONNECT:
@@ -3012,7 +3012,7 @@ __serialize_connect(const mqtt_packet_t *pkt, mqtt_str_t *b) {
     }
 
     b->n = length + 1 + mqtt_vbi_length(length);
-    b->s = malloc(b->n);
+    b->s = (char *)malloc(b->n);
     b->n = 0;
     mqtt_str_write_u8(b, 0x10);
     mqtt_str_write_vbi(b, length);
@@ -3044,7 +3044,7 @@ __serialize_connack(const mqtt_packet_t *pkt, mqtt_str_t *b) {
     v = &pkt->v.connack;
 
     if (pkt->ver == MQTT_VERSION_3 || pkt->ver == MQTT_VERSION_4) {
-        b->s = malloc(4);
+        b->s = (char *)malloc(4);
         b->n = 0;
         mqtt_str_write_u8(b, 0x20);
         mqtt_str_write_u8(b, 0x02);
@@ -3063,7 +3063,7 @@ __serialize_connack(const mqtt_packet_t *pkt, mqtt_str_t *b) {
 
         length = 2 + __properties_len(&v->v5.properties);
         b->n = length + 1 + mqtt_vbi_length(length);
-        b->s = malloc(b->n);
+        b->s = (char *)malloc(b->n);
         b->n = 0;
         mqtt_str_write_u8(b, 0x20);
         mqtt_str_write_vbi(b, length);
@@ -3095,7 +3095,7 @@ __serialize_publish(const mqtt_packet_t *pkt, mqtt_str_t *b) {
     if (pkt->ver == MQTT_VERSION_5)
         length += __properties_len(&v->v5.properties);
     b->n = length + 1 + mqtt_vbi_length(length);
-    b->s = malloc(b->n);
+    b->s = (char *)malloc(b->n);
     b->n = 0;
     mqtt_str_write_u8(b, pkt->f.flags);
     mqtt_str_write_vbi(b, length);
@@ -3116,7 +3116,7 @@ __serialize_puback(const mqtt_packet_t *pkt, mqtt_str_t *b) {
     v = &pkt->v.puback;
 
     if (pkt->ver == MQTT_VERSION_3 || pkt->ver == MQTT_VERSION_4) {
-        b->s = malloc(4);
+        b->s = (char *)malloc(4);
         b->n = 0;
         mqtt_str_write_u8(b, 0x40);
         mqtt_str_write_u8(b, 0x02);
@@ -3129,7 +3129,7 @@ __serialize_puback(const mqtt_packet_t *pkt, mqtt_str_t *b) {
 
         length = 3 + __properties_len(&v->v5.properties);
         b->n = length + 1 + mqtt_vbi_length(length);
-        b->s = malloc(b->n);
+        b->s = (char *)malloc(b->n);
         b->n = 0;
         mqtt_str_write_u8(b, 0x40);
         mqtt_str_write_vbi(b, length);
@@ -3148,7 +3148,7 @@ __serialize_pubrec(const mqtt_packet_t *pkt, mqtt_str_t *b) {
     v = &pkt->v.pubrec;
 
     if (pkt->ver == MQTT_VERSION_3 || pkt->ver == MQTT_VERSION_4) {
-        b->s = malloc(4);
+        b->s = (char *)malloc(4);
         b->n = 0;
         mqtt_str_write_u8(b, 0x50);
         mqtt_str_write_u8(b, 0x02);
@@ -3161,7 +3161,7 @@ __serialize_pubrec(const mqtt_packet_t *pkt, mqtt_str_t *b) {
 
         length = 3 + __properties_len(&v->v5.properties);
         b->n = length + 1 + mqtt_vbi_length(length);
-        b->s = malloc(b->n);
+        b->s = (char *)malloc(b->n);
         b->n = 0;
         mqtt_str_write_u8(b, 0x50);
         mqtt_str_write_vbi(b, length);
@@ -3180,7 +3180,7 @@ __serialize_pubrel(const mqtt_packet_t *pkt, mqtt_str_t *b) {
     v = &pkt->v.pubrel;
 
     if (pkt->ver == MQTT_VERSION_3 || pkt->ver == MQTT_VERSION_4) {
-        b->s = malloc(4);
+        b->s = (char *)malloc(4);
         b->n = 0;
         mqtt_str_write_u8(b, 0x62);
         mqtt_str_write_u8(b, 0x02);
@@ -3193,7 +3193,7 @@ __serialize_pubrel(const mqtt_packet_t *pkt, mqtt_str_t *b) {
 
         length = 3 + __properties_len(&v->v5.properties);
         b->n = length + 1 + mqtt_vbi_length(length);
-        b->s = malloc(b->n);
+        b->s = (char *)malloc(b->n);
         b->n = 0;
         mqtt_str_write_u8(b, 0x62);
         mqtt_str_write_vbi(b, length);
@@ -3212,7 +3212,7 @@ __serialize_pubcomp(const mqtt_packet_t *pkt, mqtt_str_t *b) {
     v = &pkt->v.pubcomp;
 
     if (pkt->ver == MQTT_VERSION_3 || pkt->ver == MQTT_VERSION_4) {
-        b->s = malloc(4);
+        b->s = (char *)malloc(4);
         b->n = 0;
         mqtt_str_write_u8(b, 0x70);
         mqtt_str_write_u8(b, 0x02);
@@ -3225,7 +3225,7 @@ __serialize_pubcomp(const mqtt_packet_t *pkt, mqtt_str_t *b) {
 
         length = 3 + __properties_len(&v->v5.properties);
         b->n = length + 1 + mqtt_vbi_length(length);
-        b->s = malloc(b->n);
+        b->s = (char *)malloc(b->n);
         b->n = 0;
         mqtt_str_write_u8(b, 0x70);
         mqtt_str_write_vbi(b, length);
@@ -3264,7 +3264,7 @@ __serialize_subscribe(const mqtt_packet_t *pkt, mqtt_str_t *b) {
     if (pkt->ver == MQTT_VERSION_5)
         length += __properties_len(&v->v5.properties);
     b->n = length + 1 + mqtt_vbi_length(length);
-    b->s = malloc(b->n);
+    b->s = (char *)malloc(b->n);
     b->n = 0;
     mqtt_str_write_u8(b, 0x82);
     mqtt_str_write_vbi(b, length);
@@ -3301,7 +3301,7 @@ __serialize_suback(const mqtt_packet_t *pkt, mqtt_str_t *b) {
     if (pkt->ver == MQTT_VERSION_5)
         length += __properties_len(&v->v5.properties);
     b->n = length + 1 + mqtt_vbi_length(length);
-    b->s = malloc(b->n);
+    b->s = (char *)malloc(b->n);
     b->n = 0;
     mqtt_str_write_u8(b, 0x90);
     mqtt_str_write_vbi(b, length);
@@ -3347,7 +3347,7 @@ __serialize_unsubscribe(const mqtt_packet_t *pkt, mqtt_str_t *b) {
     if (pkt->ver == MQTT_VERSION_5)
         length += __properties_len(&v->v5.properties);
     b->n = length + 1 + mqtt_vbi_length(length);
-    b->s = malloc(b->n);
+    b->s = (char *)malloc(b->n);
     b->n = 0;
     mqtt_str_write_u8(b, 0xa2);
     mqtt_str_write_vbi(b, length);
@@ -3368,7 +3368,7 @@ __serialize_unsuback(const mqtt_packet_t *pkt, mqtt_str_t *b) {
     p = &pkt->p.unsuback;
 
     if (pkt->ver == MQTT_VERSION_3 || pkt->ver == MQTT_VERSION_4) {
-        b->s = malloc(4);
+        b->s = (char *)malloc(4);
         b->n = 0;
         mqtt_str_write_u8(b, 0xb0);
         mqtt_str_write_u8(b, 0x02);
@@ -3382,7 +3382,7 @@ __serialize_unsuback(const mqtt_packet_t *pkt, mqtt_str_t *b) {
 
         length = 2 + __properties_len(&v->v5.properties) + p->v5.n;
         b->n = length + 1 + mqtt_vbi_length(length);
-        b->s = malloc(b->n);
+        b->s = (char *)malloc(b->n);
         b->n = 0;
         mqtt_str_write_u8(b, 0xb0);
         mqtt_str_write_vbi(b, length);
@@ -3398,7 +3398,7 @@ static int
 __serialize_pingreq(const mqtt_packet_t *pkt, mqtt_str_t *b) {
     (void)pkt;
 
-    b->s = malloc(2);
+    b->s = (char *)malloc(2);
     b->n = 0;
     mqtt_str_write_u8(b, 0xc0);
     mqtt_str_write_u8(b, 0x00);
@@ -3410,7 +3410,7 @@ static int
 __serialize_pingresp(const mqtt_packet_t *pkt, mqtt_str_t *b) {
     (void)pkt;
 
-    b->s = malloc(2);
+    b->s = (char *)malloc(2);
     b->n = 0;
     mqtt_str_write_u8(b, 0xd0);
     mqtt_str_write_u8(b, 0x00);
@@ -3421,7 +3421,7 @@ __serialize_pingresp(const mqtt_packet_t *pkt, mqtt_str_t *b) {
 static int
 __serialize_disconnect(const mqtt_packet_t *pkt, mqtt_str_t *b) {
     if (pkt->ver == MQTT_VERSION_3 || pkt->ver == MQTT_VERSION_4) {
-        b->s = malloc(2);
+        b->s = (char *)malloc(2);
         b->n = 0;
         mqtt_str_write_u8(b, 0xe0);
         mqtt_str_write_u8(b, 0x00);
@@ -3436,7 +3436,7 @@ __serialize_disconnect(const mqtt_packet_t *pkt, mqtt_str_t *b) {
 
         length = 1 + __properties_len(&v->v5.properties);
         b->n = length + 1 + mqtt_vbi_length(length);
-        b->s = malloc(b->n);
+        b->s = (char *)malloc(b->n);
         b->n = 0;
         mqtt_str_write_u8(b, 0xe0);
         mqtt_str_write_vbi(b, length);
@@ -3460,7 +3460,7 @@ __serialize_auth(const mqtt_packet_t *pkt, mqtt_str_t *b) {
 
         length = 1 + __properties_len(&v->v5.properties);
         b->n = length + 1 + mqtt_vbi_length(length);
-        b->s = malloc(b->n);
+        b->s = (char *)malloc(b->n);
         b->n = 0;
         mqtt_str_write_u8(b, 0xf0);
         mqtt_str_write_vbi(b, length);
@@ -3793,7 +3793,7 @@ __sn_parse_publish(mqtt_sn_packet_t *pkt, mqtt_str_t *remaining) {
         remaining->s += 2;
         remaining->n -= 2;
     }
-    pkt->v.publish.topic.type = topic_id_type;
+    pkt->v.publish.topic.type = (mqtt_sn_topic_id_type_t)topic_id_type;
     pkt->v.publish.msg_id = mqtt_str_read_u16(remaining);
     if (pkt->v.publish.flags.bits.qos == 0 && pkt->v.publish.msg_id != 0)
         return -1;
@@ -3862,7 +3862,7 @@ __sn_parse_subscribe(mqtt_sn_packet_t *pkt, mqtt_str_t *remaining) {
     } else if (topic_id_type == MQTT_SN_TOPIC_ID_TYPE_PREDEFINED) {
         pkt->v.subscribe.topic.id = mqtt_str_read_u16(remaining);
     }
-    pkt->v.subscribe.topic.type = topic_id_type;
+    pkt->v.subscribe.topic.type = (mqtt_sn_topic_id_type_t)topic_id_type;
     return 0;
 }
 
@@ -3900,7 +3900,7 @@ __sn_parse_unsubscribe(mqtt_sn_packet_t *pkt, mqtt_str_t *remaining) {
     } else if (topic_id_type == MQTT_SN_TOPIC_ID_TYPE_PREDEFINED) {
         pkt->v.unsubscribe.topic.id = mqtt_str_read_u16(remaining);
     }
-    pkt->v.unsubscribe.topic.type = topic_id_type;
+    pkt->v.unsubscribe.topic.type = (mqtt_sn_topic_id_type_t)topic_id_type;
     return 0;
 }
 
@@ -4233,7 +4233,7 @@ mqtt_sn_read(mqtt_sn_reader_t *reader, mqtt_sn_packet_t *pkt) {
         size_t required;
 
         if (parser->state == MQTT_SN_ST_REMAIN) {
-            buff = malloc(parser->require);
+            buff = (char *)malloc(parser->require);
             required = parser->require;
         } else {
             buff = (char *)&k;
@@ -4320,7 +4320,7 @@ mqtt_sn_write_length(mqtt_str_t *b, uint16_t length) {
 static void
 __sn_serialize_advertise(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
     uint8_t length = 5;
-    b->s = malloc(length);
+    b->s = (char *)malloc(length);
     b->n = 0;
 
     mqtt_str_write_u8(b, length);
@@ -4332,7 +4332,7 @@ __sn_serialize_advertise(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
 static void
 __sn_serialize_searchgw(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
     uint8_t length = 3;
-    b->s = malloc(length);
+    b->s = (char *)malloc(length);
     b->n = 0;
 
     mqtt_str_write_u8(b, length);
@@ -4343,7 +4343,7 @@ __sn_serialize_searchgw(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
 static void
 __sn_serialize_gwinfo(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
     uint8_t length = 3 + pkt->v.gwinfo.gwadd.n;
-    b->s = malloc(length);
+    b->s = (char *)malloc(length);
     b->n = 0;
 
     mqtt_str_write_u8(b, length);
@@ -4355,7 +4355,7 @@ __sn_serialize_gwinfo(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
 static void
 __sn_serialize_connect(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
     uint8_t length = 6 + pkt->v.connect.client_id.n;
-    b->s = malloc(length);
+    b->s = (char *)malloc(length);
     b->n = 0;
 
     mqtt_str_write_u8(b, length);
@@ -4369,7 +4369,7 @@ __sn_serialize_connect(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
 static void
 __sn_serialize_connack(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
     uint8_t length = 3;
-    b->s = malloc(length);
+    b->s = (char *)malloc(length);
     b->n = 0;
 
     mqtt_str_write_u8(b, length);
@@ -4381,7 +4381,7 @@ static void
 __sn_serialize_willtopicreq(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
     (void)pkt;
     uint8_t length = 2;
-    b->s = malloc(length);
+    b->s = (char *)malloc(length);
     b->n = 0;
 
     mqtt_str_write_u8(b, length);
@@ -4396,7 +4396,7 @@ __sn_serialize_willtopic(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
         length = mqtt_sn_vbi_length(2 + pkt->v.willtopic.topic_name.n);
     else
         length = 2;
-    b->s = malloc(length);
+    b->s = (char *)malloc(length);
     b->n = 0;
 
     mqtt_sn_write_length(b, length);
@@ -4411,7 +4411,7 @@ static void
 __sn_serialize_willmsgreq(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
     (void)pkt;
     uint8_t length = 2;
-    b->s = malloc(length);
+    b->s = (char *)malloc(length);
     b->n = 0;
 
     mqtt_str_write_u8(b, length);
@@ -4421,7 +4421,7 @@ __sn_serialize_willmsgreq(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
 static void
 __sn_serialize_willmsg(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
     uint16_t length = mqtt_sn_vbi_length(1 + pkt->v.willmsg.message.n);
-    b->s = malloc(length);
+    b->s = (char *)malloc(length);
     b->n = 0;
 
     mqtt_sn_write_length(b, length);
@@ -4432,7 +4432,7 @@ __sn_serialize_willmsg(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
 static void
 __sn_serialize_register(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
     uint16_t length = mqtt_sn_vbi_length(5 + pkt->v.regist.topic_name.n);
-    b->s = malloc(length);
+    b->s = (char *)malloc(length);
     b->n = 0;
 
     mqtt_sn_write_length(b, length);
@@ -4445,7 +4445,7 @@ __sn_serialize_register(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
 static void
 __sn_serialize_regack(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
     uint8_t length = 7;
-    b->s = malloc(length);
+    b->s = (char *)malloc(length);
     b->n = 0;
 
     mqtt_str_write_u8(b, length);
@@ -4459,7 +4459,7 @@ static void
 __sn_serialize_publish(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
     uint8_t topic_id_type = pkt->v.publish.flags.bits.topic_id_type;
     uint16_t length = mqtt_sn_vbi_length(6 + pkt->v.publish.data.n);
-    b->s = malloc(length);
+    b->s = (char *)malloc(length);
     b->n = 0;
 
     mqtt_sn_write_length(b, length);
@@ -4479,7 +4479,7 @@ __sn_serialize_publish(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
 static void
 __sn_serialize_puback(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
     uint8_t length = 7;
-    b->s = malloc(length);
+    b->s = (char *)malloc(length);
     b->n = 0;
 
     mqtt_str_write_u8(b, length);
@@ -4492,7 +4492,7 @@ __sn_serialize_puback(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
 static void
 __sn_serialize_pubrec(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
     uint8_t length = 4;
-    b->s = malloc(length);
+    b->s = (char *)malloc(length);
     b->n = 0;
 
     mqtt_str_write_u8(b, length);
@@ -4503,7 +4503,7 @@ __sn_serialize_pubrec(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
 static void
 __sn_serialize_pubrel(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
     uint8_t length = 4;
-    b->s = malloc(length);
+    b->s = (char *)malloc(length);
     b->n = 0;
 
     mqtt_str_write_u8(b, length);
@@ -4514,7 +4514,7 @@ __sn_serialize_pubrel(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
 static void
 __sn_serialize_pubcomp(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
     uint8_t length = 4;
-    b->s = malloc(length);
+    b->s = (char *)malloc(length);
     b->n = 0;
 
     mqtt_str_write_u8(b, length);
@@ -4534,7 +4534,7 @@ __sn_serialize_subscribe(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
     else if (topic_id_type == MQTT_SN_TOPIC_ID_TYPE_PREDEFINED)
         length += 2;
     length = mqtt_sn_vbi_length(length);
-    b->s = malloc(length);
+    b->s = (char *)malloc(length);
     b->n = 0;
 
     mqtt_sn_write_length(b, length);
@@ -4553,7 +4553,7 @@ __sn_serialize_subscribe(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
 static void
 __sn_serialize_suback(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
     uint8_t length = 8;
-    b->s = malloc(length);
+    b->s = (char *)malloc(length);
     b->n = 0;
 
     mqtt_str_write_u8(b, length);
@@ -4576,7 +4576,7 @@ __sn_serialize_unsubscribe(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
     else if (topic_id_type == MQTT_SN_TOPIC_ID_TYPE_PREDEFINED)
         length += 2;
     length = mqtt_sn_vbi_length(length);
-    b->s = malloc(length);
+    b->s = (char *)malloc(length);
     b->n = 0;
 
     mqtt_sn_write_length(b, length);
@@ -4595,7 +4595,7 @@ __sn_serialize_unsubscribe(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
 static void
 __sn_serialize_unsuback(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
     uint8_t length = 4;
-    b->s = malloc(length);
+    b->s = (char *)malloc(length);
     b->n = 0;
 
     mqtt_str_write_u8(b, length);
@@ -4606,7 +4606,7 @@ __sn_serialize_unsuback(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
 static void
 __sn_serialize_pingreq(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
     uint8_t length = 2 + pkt->v.pingreq.client_id.n;
-    b->s = malloc(length);
+    b->s = (char *)malloc(length);
     b->n = 0;
 
     mqtt_str_write_u8(b, length);
@@ -4619,7 +4619,7 @@ static void
 __sn_serialize_pingresp(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
     (void)pkt;
     uint8_t length = 2;
-    b->s = malloc(length);
+    b->s = (char *)malloc(length);
     b->n = 0;
 
     mqtt_str_write_u8(b, length);
@@ -4632,7 +4632,7 @@ __sn_serialize_disconnect(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
 
     if (pkt->v.disconnect.duration > 0)
         length += 2;
-    b->s = malloc(length);
+    b->s = (char *)malloc(length);
     b->n = 0;
 
     mqtt_str_write_u8(b, length);
@@ -4650,7 +4650,7 @@ __sn_serialize_willtopicupd(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
     else
         length = mqtt_sn_vbi_length(2 + pkt->v.willtopicupd.topic_name.n);
 
-    b->s = malloc(length);
+    b->s = (char *)malloc(length);
     b->n = 0;
 
     mqtt_sn_write_length(b, length);
@@ -4664,7 +4664,7 @@ __sn_serialize_willtopicupd(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
 static void
 __sn_serialize_willmsgupd(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
     uint16_t length = mqtt_sn_vbi_length(1 + pkt->v.willmsgupd.message.n);
-    b->s = malloc(length);
+    b->s = (char *)malloc(length);
     b->n = 0;
 
     mqtt_sn_write_length(b, length);
@@ -4675,7 +4675,7 @@ __sn_serialize_willmsgupd(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
 static void
 __sn_serialize_willtopicresp(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
     uint8_t length = 3;
-    b->s = malloc(length);
+    b->s = (char *)malloc(length);
     b->n = 0;
 
     mqtt_str_write_u8(b, length);
@@ -4686,7 +4686,7 @@ __sn_serialize_willtopicresp(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
 static void
 __sn_serialize_willmsgresp(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
     uint8_t length = 3;
-    b->s = malloc(length);
+    b->s = (char *)malloc(length);
     b->n = 0;
 
     mqtt_str_write_u8(b, length);
@@ -4697,7 +4697,7 @@ __sn_serialize_willmsgresp(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
 static void
 __sn_serialize_encapsulated(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
     uint16_t length = mqtt_sn_vbi_length(2 + pkt->v.encapsulated.wireless_node.n);
-    b->s = malloc(length);
+    b->s = (char *)malloc(length);
     b->n = 0;
 
     mqtt_sn_write_length(b, length);

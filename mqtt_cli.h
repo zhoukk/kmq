@@ -229,7 +229,7 @@ _append_padding(mqtt_cli_t *m, mqtt_packet_t *pkt) {
 
         mp = (mqtt_cli_packet_t *)malloc(sizeof *mp);
         memset(mp, 0, sizeof *mp);
-        mp->type = pkt->f.bits.type;
+        mp->type = (mqtt_packet_type_t)pkt->f.bits.type;
         mqtt_str_set(&mp->b, &b);
         mp->t_send = m->t.now;
         switch (pkt->f.bits.type) {
@@ -536,7 +536,7 @@ mqtt_cli_outgoing(mqtt_cli_t *m, mqtt_str_t *outgoing) {
     if (outgoing->n > 0) {
         mqtt_cli_packet_t **pmp;
 
-        outgoing->s = malloc(outgoing->n);
+        outgoing->s = (char *)malloc(outgoing->n);
         outgoing->n = 0;
 
         pmp = &m->padding;
@@ -548,7 +548,7 @@ mqtt_cli_outgoing(mqtt_cli_t *m, mqtt_str_t *outgoing) {
                     *pmp = mp->next;
                     mqtt_str_free(&mp->b);
                     free(mp);
-		    continue;
+                    continue;
                 }
                 mp->wait_ack = 1;
                 mp->t_send = m->t.now;
@@ -633,15 +633,12 @@ linux_tcp_connect(const char *host, int port) {
 
         if ((rc = getnameinfo(p->ai_addr, p->ai_addrlen, ip, sizeof(ip), portstr, sizeof(portstr),
                               NI_NUMERICHOST | NI_NUMERICSERV)) != 0) {
-            fprintf(stderr, "getnameinfo e: %s\n", gai_strerror(rc));
             continue;
         }
         if ((fd = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == -1) {
-            fprintf(stderr, "socket e: %s\n", strerror(errno));
             continue;
         }
         if (connect(fd, p->ai_addr, p->ai_addrlen) == -1) {
-            fprintf(stderr, "connect %s:%d e: %s\n", ip, port, strerror(errno));
             close(fd);
             fd = -1;
             continue;
