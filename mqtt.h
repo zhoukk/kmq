@@ -2250,6 +2250,8 @@ __parse_publish(mqtt_str_t *remaining, mqtt_packet_t *pkt) {
     } else if (pkt->ver == MQTT_VERSION_5) {
         if (remaining->n < 4)
             return -1;
+    } else {
+        return -1;
     }
     mqtt_str_read_utf(remaining, &v->topic_name);
     if (mqtt_str_empty(&v->topic_name))
@@ -2286,6 +2288,8 @@ __parse_puback(mqtt_str_t *remaining, mqtt_packet_t *pkt) {
     } else if (pkt->ver == MQTT_VERSION_5) {
         if (remaining->n < 2)
             return -1;
+    } else {
+        return -1;
     }
     v->packet_id = mqtt_str_read_u16(remaining);
     if (pkt->ver == MQTT_VERSION_5) {
@@ -2319,6 +2323,8 @@ __parse_pubrec(mqtt_str_t *remaining, mqtt_packet_t *pkt) {
     } else if (pkt->ver == MQTT_VERSION_5) {
         if (remaining->n < 2)
             return -1;
+    } else {
+        return -1;
     }
     v->packet_id = mqtt_str_read_u16(remaining);
     if (pkt->ver == MQTT_VERSION_5) {
@@ -2352,6 +2358,8 @@ __parse_pubrel(mqtt_str_t *remaining, mqtt_packet_t *pkt) {
     } else if (pkt->ver == MQTT_VERSION_5) {
         if (remaining->n < 2)
             return -1;
+    } else {
+        return -1;
     }
     v->packet_id = mqtt_str_read_u16(remaining);
     if (pkt->ver == MQTT_VERSION_5) {
@@ -2385,6 +2393,8 @@ __parse_pubcomp(mqtt_str_t *remaining, mqtt_packet_t *pkt) {
     } else if (pkt->ver == MQTT_VERSION_5) {
         if (remaining->n < 2)
             return -1;
+    } else {
+        return -1;
     }
     v->packet_id = mqtt_str_read_u16(remaining);
     if (pkt->ver == MQTT_VERSION_5) {
@@ -2586,6 +2596,8 @@ __parse_unsuback(mqtt_str_t *remaining, mqtt_packet_t *pkt) {
     } else if (pkt->ver == MQTT_VERSION_5) {
         if (remaining->n < 3)
             return -1;
+    } else {
+        return -1;
     }
 
     v->packet_id = mqtt_str_read_u16(remaining);
