@@ -2920,6 +2920,10 @@ mqtt_read(mqtt_reader_t *reader, mqtt_packet_t *pkt) {
                 rc = -1;
                 goto e;
             }
+            if (parser->pkt.b.n >= (1 << 28)) {
+                rc = -1;
+                goto e;
+            }
             parser->multiplier *= 0x80;
             if ((k & 0x80) == 0) {
                 parser->require = parser->pkt.b.n;
@@ -3095,6 +3099,10 @@ __serialize_publish(const mqtt_packet_t *pkt, mqtt_str_t *b) {
 
     v = &pkt->v.publish;
     p = &pkt->p.publish;
+
+    if (p->message.n >= (1 << 28)) {
+        return -1;
+    }
 
     if (pkt->ver == MQTT_VERSION_5) {
         if (!mqtt_properties_valid(&v->v5.properties, MQTT_PUBLISH, 0))
