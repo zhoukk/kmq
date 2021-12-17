@@ -482,9 +482,6 @@ main(int argc, char *argv[]) {
     if (!host) {
         host = strdup("127.0.0.1");
     }
-    if (!client_id_prefix) {
-        client_id_prefix = strdup("mqtt_pub_");
-    }
 
     if (pub_mode == MSGMODE_STDIN_LINE) {
         if (load_stdin_line()) {
@@ -512,7 +509,10 @@ main(int argc, char *argv[]) {
         usage();
     }
 
-    if (client_id_prefix) {
+    if (!client_id) {
+        if (!client_id_prefix) {
+            client_id_prefix = strdup("mqtt_pub_");
+        }
         client_id = malloc(strlen(client_id_prefix) + 10);
         if (!client_id) {
             if (!quiet)
