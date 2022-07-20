@@ -1067,6 +1067,7 @@ mqtt_on_connect(mqtt_client_t *c, mqtt_packet_t *req, mqtt_packet_t *res) {
             if (s->c) {
                 LOG_D("client.%p.kick", s->c);
                 mqtt_client_shutdown(s->c);
+                s->c->s = 0;
                 s->c = 0;
             }
             if (!req->v.connect.connect_flags.bits.clean_session) {
@@ -1168,6 +1169,9 @@ mqtt_on_publish(mqtt_client_t *c, mqtt_packet_t *req, mqtt_packet_t *res) {
     uint8_t dup;
 
     s = c->s;
+    if (!s) {
+        return -1;
+    }
     LOG_I("[%.*s] received PUBLISH (id: %" PRIu16 ", qos: %" PRIu8 ", retain: %" PRIu8 ", dup: %" PRIu8
           ", topic_name: %.*s, ...(%zu bytes))",
           MQTT_STR_PRINT(s->client_id), req->v.publish.packet_id, req->f.bits.qos, req->f.bits.retain, req->f.bits.dup,
@@ -1226,6 +1230,9 @@ mqtt_on_puback(mqtt_client_t *c, mqtt_packet_t *req, mqtt_packet_t *res) {
     (void)res;
 
     s = c->s;
+    if (!s) {
+        return -1;
+    }    
     switch (req->ver) {
     case MQTT_VERSION_3:
     case MQTT_VERSION_4:
@@ -1247,6 +1254,9 @@ mqtt_on_pubrec(mqtt_client_t *c, mqtt_packet_t *req, mqtt_packet_t *res) {
     mqtt_session_t *s;
 
     s = c->s;
+    if (!s) {
+        return -1;
+    }    
     switch (req->ver) {
     case MQTT_VERSION_3:
     case MQTT_VERSION_4:
@@ -1277,6 +1287,9 @@ mqtt_on_pubrel(mqtt_client_t *c, mqtt_packet_t *req, mqtt_packet_t *res) {
     mqtt_session_t *s;
 
     s = c->s;
+    if (!s) {
+        return -1;
+    }    
     switch (req->ver) {
     case MQTT_VERSION_3:
     case MQTT_VERSION_4:
@@ -1306,6 +1319,9 @@ mqtt_on_pubcomp(mqtt_client_t *c, mqtt_packet_t *req, mqtt_packet_t *res) {
     (void)res;
 
     s = c->s;
+    if (!s) {
+        return -1;
+    }    
     switch (req->ver) {
     case MQTT_VERSION_3:
     case MQTT_VERSION_4:
@@ -1328,6 +1344,9 @@ mqtt_on_subscribe(mqtt_client_t *c, mqtt_packet_t *req, mqtt_packet_t *res) {
     int i;
 
     s = c->s;
+    if (!s) {
+        return -1;
+    }    
     LOG_I("[%.*s] received SUBSCRIBE (id: %" PRIu16 ")", MQTT_STR_PRINT(s->client_id), req->v.subscribe.packet_id);
 
     res->f.bits.type = MQTT_SUBACK;
@@ -1385,6 +1404,9 @@ mqtt_on_unsubscribe(mqtt_client_t *c, mqtt_packet_t *req, mqtt_packet_t *res) {
     int i;
 
     s = c->s;
+    if (!s) {
+        return -1;
+    }    
     LOG_I("[%.*s] received UNSUBSCRIBE (id: %" PRIu16 ")", MQTT_STR_PRINT(s->client_id), req->v.unsubscribe.packet_id);
 
     res->f.bits.type = MQTT_UNSUBACK;
@@ -1423,6 +1445,9 @@ mqtt_on_pingreq(mqtt_client_t *c, mqtt_packet_t *req, mqtt_packet_t *res) {
     (void)req;
 
     s = c->s;
+    if (!s) {
+        return -1;
+    }    
     LOG_I("[%.*s] received PINGREQ", MQTT_STR_PRINT(s->client_id));
 
     res->f.bits.type = MQTT_PINGRESP;
@@ -1437,6 +1462,9 @@ mqtt_on_disconnect(mqtt_client_t *c, mqtt_packet_t *req, mqtt_packet_t *res) {
     (void)res;
 
     s = c->s;
+    if (!s) {
+        return -1;
+    }    
     switch (req->ver) {
     case MQTT_VERSION_3:
     case MQTT_VERSION_4:
