@@ -1065,7 +1065,6 @@ mqtt_on_connect(mqtt_client_t *c, mqtt_packet_t *req, mqtt_packet_t *res) {
         s = mqtt_broker_find_session(&client_id);
         if (s) {
             if (s->c) {
-                s->c->s = 0;
                 LOG_D("client.%p.kick", s->c);
                 mqtt_client_shutdown(s->c);
                 s->c = 0;
