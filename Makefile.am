@@ -8,6 +8,7 @@ BROKER_SRCS = \
     rbtree.h rbtree.c \
     map.h \
     queue.h \
+    http_parser.c \
     mqtt_broker.c
 
 mqtt_broker_SOURCES = $(BROKER_SRCS)

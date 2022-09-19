@@ -10,6 +10,11 @@
 #define LOG_IMPL
 #include "log.h"
 
+#define HTTP_IMPL
+#define BASE64_IMPL
+#define URLCODE_IMPL
+#include "http.h"
+
 #include "map.h"
 #include "queue.h"
 
@@ -20,6 +25,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #define LOG_DUMP(...) broker_log_dump(__VA_ARGS__)
 #define LOG_PROP(...) broker_log_prop(__VA_ARGS__)
@@ -38,6 +44,7 @@ typedef struct mqtt_session_s mqtt_session_t;
 typedef struct mqtt_message_s mqtt_message_t;
 typedef struct mqtt_subscriber_s mqtt_subscriber_t;
 typedef struct mqtt_trie_s mqtt_trie_t;
+typedef struct mqtt_account_s mqtt_account_t;
 typedef struct mqtt_broker_s mqtt_broker_t;
 
 struct mqtt_client_s {
@@ -108,6 +115,13 @@ struct mqtt_trie_s {
     mqtt_message_t *retain;
 };
 
+struct mqtt_account_s {
+    mqtt_str_t client_id;
+    mqtt_str_t username;
+    mqtt_str_t password;
+    queue_t node;
+};
+
 struct mqtt_broker_s {
     uv_loop_t *loop;
     uv_tcp_t server;
@@ -115,11 +129,14 @@ struct mqtt_broker_s {
     mqtt_trie_t *sub_root;
     char *host;
     int port;
+    char *auth_type;
+    char *auth_api;
     uint64_t t_now;
     snowflake_t snowflake;
     queue_t client_q;
     map_t session_m;
     queue_t msg_q;
+    queue_t account_q;
 };
 
 static mqtt_broker_t B = {0};
@@ -1018,6 +1035,165 @@ mqtt_client_id_generate(mqtt_str_t *client_id) {
 }
 
 static int
+_authenticate_from_config(mqtt_p_connect_t *connect) {
+    queue_t *node;
+
+    queue_foreach(node, &B.account_q) {
+        mqtt_account_t *acc;
+
+        acc = queue_data(node, mqtt_account_t, node);
+        if (mqtt_str_equal(&acc->username, &connect->username) && mqtt_str_equal(&acc->password, &connect->password)) {
+            if (0 == mqtt_str_strcmp(&acc->client_id, "*") || mqtt_str_equal(&acc->client_id, &connect->client_id)) {
+                return 0;
+            }
+        }
+    }
+
+    return -1;
+}
+
+static int
+_tcp_connect(const char *host, int port) {
+    struct addrinfo hints, *servinfo, *p;
+    char ip[16];
+    char portstr[6];
+    int fd, rc;
+
+    memset(&hints, 0, sizeof hints);
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_family = AF_INET;
+    hints.ai_protocol = IPPROTO_TCP;
+
+    fd = -1;
+    snprintf(portstr, sizeof(portstr), "%d", port);
+    if ((rc = getaddrinfo(host, portstr, &hints, &servinfo)) != 0) {
+        fprintf(stderr, "getaddrinfo %s e: %s\n", host, gai_strerror(rc));
+        return -1;
+    }
+    for (p = servinfo; p; p = p->ai_next) {
+        struct timeval timeout = {1, 0};
+        int on = 1;
+
+        if ((rc = getnameinfo(p->ai_addr, p->ai_addrlen, ip, sizeof(ip), portstr, sizeof(portstr),
+                              NI_NUMERICHOST | NI_NUMERICSERV)) != 0) {
+            continue;
+        }
+        if ((fd = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == -1) {
+            continue;
+        }
+        if (connect(fd, p->ai_addr, p->ai_addrlen) == -1) {
+            close(fd);
+            fd = -1;
+            continue;
+        }
+        setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
+        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+        setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &on, sizeof(on));
+    }
+    freeaddrinfo(servinfo);
+
+    return fd;
+}
+
+static ssize_t
+_tcp_send(int fd, const void *data, size_t size) {
+    ssize_t nsend, totlen = 0;
+    char *buf = (char *)data;
+
+    while ((size_t)totlen != size) {
+        nsend = send(fd, buf, size - totlen, 0);
+        if (nsend == 0)
+            return -1;
+        if (nsend == -1) {
+            if (errno == EAGAIN)
+                continue;
+            return -1;
+        }
+        totlen += nsend;
+        buf += nsend;
+    }
+    return totlen;
+}
+
+static ssize_t
+_tcp_recv(int fd, void *data, size_t size) {
+    ssize_t nrecv;
+
+    nrecv = recv(fd, data, size, 0);
+    if (nrecv == 0)
+        return -1;
+    if (nrecv == -1) {
+        if (errno == EAGAIN)
+            return 0;
+        return -1;
+    }
+    return nrecv;
+}
+
+static int
+_authenticate_from_httpapi(mqtt_p_connect_t *connect) {
+    char buf[4096] = {0};
+    int ret_status = 401;
+
+    http_str_t req_body;
+
+    req_body.s = buf;
+    req_body.n = sprintf(buf, "{\"client_id\":\"%.*s\",\"username\":\"%.*s\",\"password\":\"%.*s\"}",
+                         MQTT_STR_PRINT(connect->client_id), MQTT_STR_PRINT(connect->username),
+                         MQTT_STR_PRINT(connect->password));
+
+    http_request_t req;
+
+    http_request_init(&req);
+    http_url_parse(&req.url, B.auth_api);
+    http_request_set_method(&req, "POST");
+    http_request_set_header(&req, "Content-Type", "application/json");
+    http_request_set_body(&req, req_body);
+    http_str_t req_data = http_request_build(&req);
+
+    int fd = _tcp_connect(req.url.host, req.url.port);
+    if (-1 == fd) {
+        http_request_unit(&req);
+        LOG_W("can not connect to auth api:%s", B.auth_api);
+        return -1;
+    }
+
+    _tcp_send(fd, req_data.s, req_data.n);
+    printf("api send:%.*s\n", (int)req_data.n, req_data.s);
+    http_request_unit(&req);
+
+    http_str_t res_data;
+    res_data.n = _tcp_recv(fd, buf, 4096);
+    res_data.s = buf;
+    printf("api recv:%.*s\n", (int)res_data.n, res_data.s);
+
+    close(fd);
+
+    http_response_t res;
+    http_response_init(&res);
+    if (0 == http_response_parse(&res, res_data)) {
+        ret_status = res.status;
+    }
+    http_response_unit(&res);
+
+    if (ret_status == 200) {
+        return 0;
+    }
+
+    LOG_I("auth api status:%d", ret_status);
+
+    return -1;
+}
+
+static int
+mqtt_client_authenticate(mqtt_p_connect_t *connect) {
+    if (!strcmp(B.auth_type, "config"))
+        return _authenticate_from_config(connect);
+    else
+        return _authenticate_from_httpapi(connect);
+}
+
+static int
 mqtt_on_connect(mqtt_client_t *c, mqtt_packet_t *req, mqtt_packet_t *res) {
     mqtt_str_t client_id = MQTT_STR_INITIALIZER;
     mqtt_session_t *s;
@@ -1058,6 +1234,12 @@ mqtt_on_connect(mqtt_client_t *c, mqtt_packet_t *req, mqtt_packet_t *res) {
     }
 
     // authenticate
+    if (mqtt_client_authenticate(&req->p.connect) != 0) {
+        res->v.connack.v3.return_code = MQTT_CRC_REFUSED_BAD_USERNAME_PASSWORD;
+        res->v.connack.v4.return_code = MQTT_CRC_REFUSED_BAD_USERNAME_PASSWORD;
+        res->v.connack.v5.reason_code = MQTT_RC_BAD_USERNAME_OR_PASSWORD;
+        goto e;
+    }
 
     s = 0;
     if (req->p.connect.client_id.n > 0) {
@@ -1232,7 +1414,7 @@ mqtt_on_puback(mqtt_client_t *c, mqtt_packet_t *req, mqtt_packet_t *res) {
     s = c->s;
     if (!s) {
         return -1;
-    }    
+    }
     switch (req->ver) {
     case MQTT_VERSION_3:
     case MQTT_VERSION_4:
@@ -1256,7 +1438,7 @@ mqtt_on_pubrec(mqtt_client_t *c, mqtt_packet_t *req, mqtt_packet_t *res) {
     s = c->s;
     if (!s) {
         return -1;
-    }    
+    }
     switch (req->ver) {
     case MQTT_VERSION_3:
     case MQTT_VERSION_4:
@@ -1289,7 +1471,7 @@ mqtt_on_pubrel(mqtt_client_t *c, mqtt_packet_t *req, mqtt_packet_t *res) {
     s = c->s;
     if (!s) {
         return -1;
-    }    
+    }
     switch (req->ver) {
     case MQTT_VERSION_3:
     case MQTT_VERSION_4:
@@ -1321,7 +1503,7 @@ mqtt_on_pubcomp(mqtt_client_t *c, mqtt_packet_t *req, mqtt_packet_t *res) {
     s = c->s;
     if (!s) {
         return -1;
-    }    
+    }
     switch (req->ver) {
     case MQTT_VERSION_3:
     case MQTT_VERSION_4:
@@ -1346,7 +1528,7 @@ mqtt_on_subscribe(mqtt_client_t *c, mqtt_packet_t *req, mqtt_packet_t *res) {
     s = c->s;
     if (!s) {
         return -1;
-    }    
+    }
     LOG_I("[%.*s] received SUBSCRIBE (id: %" PRIu16 ")", MQTT_STR_PRINT(s->client_id), req->v.subscribe.packet_id);
 
     res->f.bits.type = MQTT_SUBACK;
@@ -1406,7 +1588,7 @@ mqtt_on_unsubscribe(mqtt_client_t *c, mqtt_packet_t *req, mqtt_packet_t *res) {
     s = c->s;
     if (!s) {
         return -1;
-    }    
+    }
     LOG_I("[%.*s] received UNSUBSCRIBE (id: %" PRIu16 ")", MQTT_STR_PRINT(s->client_id), req->v.unsubscribe.packet_id);
 
     res->f.bits.type = MQTT_UNSUBACK;
@@ -1447,7 +1629,7 @@ mqtt_on_pingreq(mqtt_client_t *c, mqtt_packet_t *req, mqtt_packet_t *res) {
     s = c->s;
     if (!s) {
         return -1;
-    }    
+    }
     LOG_I("[%.*s] received PINGREQ", MQTT_STR_PRINT(s->client_id));
 
     res->f.bits.type = MQTT_PINGRESP;
@@ -1464,7 +1646,7 @@ mqtt_on_disconnect(mqtt_client_t *c, mqtt_packet_t *req, mqtt_packet_t *res) {
     s = c->s;
     if (!s) {
         return -1;
-    }    
+    }
     switch (req->ver) {
     case MQTT_VERSION_3:
     case MQTT_VERSION_4:
@@ -1746,6 +1928,28 @@ _broker_config(void *ud, const char *section, const char *key, const char *value
         }
     }
 
+    if (!strcmp(section, "auth")) {
+        if (!strcmp(key, "type")) {
+            B.auth_type = strdup(value);
+        } else if (!strcmp(key, "api")) {
+            B.auth_api = strdup(value);
+        }
+    }
+
+    if (!strcmp(section, "user")) {
+        char *client_id = strchr(value, ',');
+        if (!client_id) {
+            return -1;
+        }
+
+        mqtt_account_t *acc = (mqtt_account_t *)malloc(sizeof *acc);
+        mqtt_str_dup(&acc->username, key);
+        mqtt_str_dup(&acc->client_id, client_id + 1);
+        mqtt_str_dup_n(&acc->password, value, client_id - value);
+
+        queue_insert_tail(&B.account_q, &acc->node);
+    }
+
     return 0;
 }
 
@@ -1758,6 +1962,7 @@ mqtt_broker_init(uv_loop_t *loop, int argc, char *argv[]) {
 
     queue_init(&B.client_q);
     queue_init(&B.msg_q);
+    queue_init(&B.account_q);
     map_init(&B.session_m, _mqtt_session_client_id_key, _mqtt_session_client_id_cmp);
     B.sub_root = mqtt_trie_create(0, 0);
 

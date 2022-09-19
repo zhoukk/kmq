@@ -5,7 +5,6 @@ AC_PREREQ([2.69])
 AC_INIT([mqtt], [0.0.1], [https://github.com/zhoukk/mqtt/issues])
 AM_INIT_AUTOMAKE([-Wall -Werror foreign subdir-objects])
 AC_CONFIG_MACRO_DIRS([m4])
-AC_CONFIG_MACRO_DIR([m4])
 AC_CONFIG_SRCDIR([mqtt.h])
 AC_CONFIG_HEADERS([config.h])
 

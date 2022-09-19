@@ -28,3 +28,6 @@ EXPOSE 1883
 EXPOSE 8883
 EXPOSE 8083
 EXPOSE 8084
+
+CMD ["app/broker.ini"]
+ENTRYPOINT ["/mqtt_broker"]
