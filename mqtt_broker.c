@@ -205,7 +205,7 @@ mqtt_topic_segment(mqtt_str_t *topic) {
         size_t i;
         for (i = 0; i < topic->n; i++) {
             if (topic->s[i] == '/') {
-                seg.n = i;
+                seg.n = i + 1;
                 seg.s = topic->s;
                 break;
             }
@@ -641,9 +641,10 @@ mqtt_trie_deliver(mqtt_trie_t *trie, mqtt_message_t *msg) {
 
 static void
 mqtt_trie_dispatch(mqtt_trie_t *trie, mqtt_str_t topic_name, mqtt_message_t *msg) {
-    mqtt_str_t seg, single, multi, *topic;
+    mqtt_str_t seg, single, single_sep, multi, *topic;
 
     mqtt_str_from(&single, "+");
+    mqtt_str_from(&single_sep, "+/");
     mqtt_str_from(&multi, "#");
 
     topic = &topic_name;
@@ -660,6 +661,14 @@ mqtt_trie_dispatch(mqtt_trie_t *trie, mqtt_str_t topic_name, mqtt_message_t *msg
         }
 
         branch = mqtt_trie_find(trie, &single);
+        if (branch) {
+            mqtt_trie_dispatch(branch, *topic, msg);
+            if (!topic->n) {
+                mqtt_trie_deliver(branch, msg);
+            }
+        }
+
+        branch = mqtt_trie_find(trie, &single_sep);
         if (branch) {
             mqtt_trie_dispatch(branch, *topic, msg);
             if (!topic->n) {
@@ -1187,6 +1196,9 @@ _authenticate_from_httpapi(mqtt_p_connect_t *connect) {
 
 static int
 mqtt_client_authenticate(mqtt_p_connect_t *connect) {
+    if (!B.auth_type) {
+        return 0;
+    }
     if (!strcmp(B.auth_type, "config"))
         return _authenticate_from_config(connect);
     else
