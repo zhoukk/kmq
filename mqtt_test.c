@@ -62,7 +62,7 @@ test_mqtt() {
         assert(pkt.ver == MQTT_VERSION_3);
         assert(pkt.f.bits.type == MQTT_CONNECT);
         assert(pkt.v.connect.protocol_version == MQTT_VERSION_3);
-        assert(!mqtt_str_strcmp(&pkt.v.connect.protocol_name, MQTT_PROTOCOL_NAMES[MQTT_VERSION_3]));
+        assert(!mqtt_str_strcmp(&pkt.v.connect.protocol_name, mqtt_protocol_name(MQTT_VERSION_3)));
         assert(pkt.v.connect.connect_flags.bits.clean_session == 1);
         assert(pkt.v.connect.connect_flags.bits.will_flag == 1);
         assert(pkt.v.connect.connect_flags.bits.will_qos == MQTT_QOS_1);
@@ -88,7 +88,7 @@ test_mqtt() {
         assert(pkt.ver == MQTT_VERSION_3);
         assert(pkt.f.bits.type == MQTT_CONNECT);
         assert(pkt.v.connect.protocol_version == MQTT_VERSION_3);
-        assert(!mqtt_str_strcmp(&pkt.v.connect.protocol_name, MQTT_PROTOCOL_NAMES[MQTT_VERSION_3]));
+        assert(!mqtt_str_strcmp(&pkt.v.connect.protocol_name, mqtt_protocol_name(MQTT_VERSION_3)));
         assert(pkt.v.connect.connect_flags.bits.clean_session == 1);
         assert(pkt.v.connect.connect_flags.bits.will_flag == 1);
         assert(pkt.v.connect.connect_flags.bits.will_qos == MQTT_QOS_1);
@@ -689,7 +689,7 @@ test_mqtt() {
         assert(rc == 1);
         assert(pkt.f.bits.type == MQTT_CONNECT);
         assert(pkt.v.connect.protocol_version == MQTT_VERSION_4);
-        assert(!mqtt_str_strcmp(&pkt.v.connect.protocol_name, MQTT_PROTOCOL_NAMES[MQTT_VERSION_4]));
+        assert(!mqtt_str_strcmp(&pkt.v.connect.protocol_name, mqtt_protocol_name(MQTT_VERSION_4)));
         assert(pkt.v.connect.connect_flags.bits.clean_session == 1);
         assert(pkt.v.connect.connect_flags.bits.will_flag == 1);
         assert(pkt.v.connect.connect_flags.bits.will_qos == MQTT_QOS_1);
@@ -715,7 +715,7 @@ test_mqtt() {
         assert(rc == 1);
         assert(pkt.f.bits.type == MQTT_CONNECT);
         assert(pkt.v.connect.protocol_version == MQTT_VERSION_4);
-        assert(!mqtt_str_strcmp(&pkt.v.connect.protocol_name, MQTT_PROTOCOL_NAMES[MQTT_VERSION_4]));
+        assert(!mqtt_str_strcmp(&pkt.v.connect.protocol_name, mqtt_protocol_name(MQTT_VERSION_4)));
         assert(pkt.v.connect.connect_flags.bits.clean_session == 1);
         assert(pkt.v.connect.connect_flags.bits.will_flag == 1);
         assert(pkt.v.connect.connect_flags.bits.will_qos == MQTT_QOS_1);
@@ -1326,7 +1326,7 @@ test_mqtt() {
         assert(rc == 1);
         assert(pkt.f.bits.type == MQTT_CONNECT);
         assert(pkt.v.connect.protocol_version == MQTT_VERSION_5);
-        assert(!mqtt_str_strcmp(&pkt.v.connect.protocol_name, MQTT_PROTOCOL_NAMES[MQTT_VERSION_5]));
+        assert(!mqtt_str_strcmp(&pkt.v.connect.protocol_name, mqtt_protocol_name(MQTT_VERSION_5)));
         assert(pkt.v.connect.connect_flags.bits.clean_session == 1);
         assert(pkt.v.connect.connect_flags.bits.will_flag == 1);
         assert(pkt.v.connect.connect_flags.bits.will_qos == MQTT_QOS_2);
@@ -1360,7 +1360,7 @@ test_mqtt() {
         assert(rc == 1);
         assert(pkt.f.bits.type == MQTT_CONNECT);
         assert(pkt.v.connect.protocol_version == MQTT_VERSION_5);
-        assert(!mqtt_str_strcmp(&pkt.v.connect.protocol_name, MQTT_PROTOCOL_NAMES[MQTT_VERSION_5]));
+        assert(!mqtt_str_strcmp(&pkt.v.connect.protocol_name, mqtt_protocol_name(MQTT_VERSION_5)));
         assert(pkt.v.connect.connect_flags.bits.clean_session == 1);
         assert(pkt.v.connect.connect_flags.bits.will_flag == 1);
         assert(pkt.v.connect.connect_flags.bits.will_qos == MQTT_QOS_2);

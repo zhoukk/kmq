@@ -402,7 +402,7 @@ static void
 _puback(mqtt_sn_cli_t *m, void *ud, const mqtt_sn_packet_t *pkt) {
     if (!quiet)
         printf("Published (topic_id: %d, return_code: %d %s)\n", pkt->v.puback.topic.id, pkt->v.puback.return_code,
-               MQTT_SN_RC_NAMES[pkt->v.puback.return_code]);
+               mqtt_sn_rc_name(pkt->v.puback.return_code));
 
     if (pub_mode == MSGMODE_STDIN_LINE) {
         if (load_stdin_line()) {
@@ -446,7 +446,7 @@ static void
 _regack(mqtt_sn_cli_t *m, void *ud, const mqtt_sn_packet_t *pkt) {
     if (MQTT_SN_RC_ACCEPTED != pkt->v.regack.return_code) {
         if (!quiet)
-            fprintf(stderr, "register %s\n", MQTT_SN_RC_NAMES[pkt->v.regack.return_code]);
+            fprintf(stderr, "register %s\n", mqtt_sn_rc_name(pkt->v.regack.return_code));
         return;
     }
     if (!quiet)

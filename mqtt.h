@@ -85,6 +85,7 @@ mqtt_protocol_name(mqtt_version_t version) {
     case MQTT_VERSION_5:
         return "MQTT";
     }
+    return "";
 }
 
 static inline const char *
@@ -97,6 +98,7 @@ mqtt_version_name(mqtt_version_t version) {
     case MQTT_VERSION_5:
         return "mqttv5.0";
     }
+    return "";
 }
 
 /* mqtt-sn protocol version */
@@ -179,6 +181,7 @@ mqtt_packet_type_name(mqtt_packet_type_t type) {
     case MQTT_AUTH:
         return "AUTH";
     }
+    return "";
 }
 
 /* mqtt-sn control packet type */
@@ -278,6 +281,7 @@ mqtt_sn_packet_type_name(mqtt_sn_packet_type_t type) {
     case MQTT_SN_RESERVED:
         return "RESERVED";
     }
+    return "";
 }
 
 /* mqtt connect return code for mattv3.1 and mqttv3.1.1 */
@@ -308,6 +312,7 @@ mqtt_crc_name(mqtt_crc_t crc) {
     case MQTT_CRC_REFUSED_NOT_AUTHORIZED:
         return "REFUSED_NOT_AUTHORIZED";
     }
+    return "";
 }
 
 /* mqtt subscribe return code for mattv3.1.1 */
@@ -332,6 +337,7 @@ mqtt_src_name(mqtt_src_t src) {
     case MQTT_SRC_QOS_F:
         return "Failure";
     }
+    return "";
 }
 
 static inline mqtt_src_t
@@ -665,6 +671,7 @@ mqtt_sn_rc_name(mqtt_sn_rc_t rc) {
     case MQTT_SN_RC_REJECTED_NOT_SUPPORTED:
         return "REJECTED_NOT_SUPPORTED";
     }
+    return "";
 }
 
 /* mqtt property code for mqttv5.0 */

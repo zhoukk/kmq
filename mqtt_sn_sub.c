@@ -315,7 +315,7 @@ _suback(mqtt_sn_cli_t *m, void *ud, const mqtt_sn_packet_t *pkt) {
 
     if (!quiet)
         printf("Subscribed (topic_id: %d, qos: %d, return_code: %d %s)\n", pkt->v.suback.topic_id,
-               pkt->v.suback.flags.bits.qos, pkt->v.suback.return_code, MQTT_SN_RC_NAMES[pkt->v.suback.return_code]);
+               pkt->v.suback.flags.bits.qos, pkt->v.suback.return_code, mqtt_sn_rc_name(pkt->v.suback.return_code));
 }
 
 static void
