@@ -76,26 +76,27 @@ typedef enum {
 
 #define MQTT_IS_VERSION(v) (v >= MQTT_VERSION_3 && v <= MQTT_VERSION_5)
 
-static const char *MQTT_PROTOCOL_NAMES[] = {
-    [MQTT_VERSION_3] = "MQIsdp",
-    [MQTT_VERSION_4] = "MQTT",
-    [MQTT_VERSION_5] = "MQTT",
-};
-
 static inline const char *
 mqtt_protocol_name(mqtt_version_t version) {
-    return MQTT_PROTOCOL_NAMES[version];
+    switch (version) {
+    case MQTT_VERSION_3:
+        return "MQIsdp";
+    case MQTT_VERSION_4:
+    case MQTT_VERSION_5:
+        return "MQTT";
+    }
 }
-
-static const char *MQTT_VERSIONS[] = {
-    [MQTT_VERSION_3] = "mqttv3.1",
-    [MQTT_VERSION_4] = "mqttv3.1.1",
-    [MQTT_VERSION_5] = "mqttv5.0",
-};
 
 static inline const char *
 mqtt_version_name(mqtt_version_t version) {
-    return MQTT_VERSIONS[version];
+    switch (version) {
+    case MQTT_VERSION_3:
+        return "mqttv3.1";
+    case MQTT_VERSION_4:
+        return "mqttv3.1.1";
+    case MQTT_VERSION_5:
+        return "mqttv5.0";
+    }
 }
 
 /* mqtt-sn protocol version */
@@ -142,28 +143,42 @@ typedef enum {
 
 #define MQTT_IS_PACKET_TYPE(t) (t >= MQTT_CONNECT && t <= MQTT_AUTH)
 
-static const char *MQTT_PACKET_TYPE_NAMES[] = {
-    [MQTT_RESERVED]      = "RESERVED",
-    [MQTT_CONNECT]       = "CONNECT",
-    [MQTT_CONNACK]       = "CONNACK",
-    [MQTT_PUBLISH]       = "PUBLISH",
-    [MQTT_PUBACK]        = "PUBACK",
-    [MQTT_PUBREC]        = "PUBREC",
-    [MQTT_PUBREL]        = "PUBREL",
-    [MQTT_PUBCOMP]       = "PUBCOMP",
-    [MQTT_SUBSCRIBE]     = "SUBSCRIBE",
-    [MQTT_SUBACK]        = "SUBACK",
-    [MQTT_UNSUBSCRIBE]   = "UNSUBSCRIBE",
-    [MQTT_UNSUBACK]      = "UNSUBACK",
-    [MQTT_PINGREQ]       = "PINGREQ",
-    [MQTT_PINGRESP]      = "PINGRESP",
-    [MQTT_DISCONNECT]    = "DISCONNECT",
-    [MQTT_AUTH]          = "AUTH",
-};
-
 static inline const char *
 mqtt_packet_type_name(mqtt_packet_type_t type) {
-    return MQTT_PACKET_TYPE_NAMES[type];
+    switch (type) {
+    case MQTT_RESERVED:
+        return "RESERVED";
+    case MQTT_CONNECT:
+        return "CONNECT";
+    case MQTT_CONNACK:
+        return "CONNACK";
+    case MQTT_PUBLISH:
+        return "PUBLISH";
+    case MQTT_PUBACK:
+        return "PUBACK";
+    case MQTT_PUBREC:
+        return "PUBREC";
+    case MQTT_PUBREL:
+        return "PUBREL";
+    case MQTT_PUBCOMP:
+        return "PUBCOMP";
+    case MQTT_SUBSCRIBE:
+        return "SUBSCRIBE";
+    case MQTT_SUBACK:
+        return "SUBACK";
+    case MQTT_UNSUBSCRIBE:
+        return "UNSUBSCRIBE";
+    case MQTT_UNSUBACK:
+        return "UNSUBACK";
+    case MQTT_PINGREQ:
+        return "PINGREQ";
+    case MQTT_PINGRESP:
+        return "PINGRESP";
+    case MQTT_DISCONNECT:
+        return "DISCONNECT";
+    case MQTT_AUTH:
+        return "AUTH";
+    }
 }
 
 /* mqtt-sn control packet type */
@@ -201,41 +216,68 @@ typedef enum {
 
 #define MQTT_SN_IS_PACKET_TYPE(t) (t >= MQTT_SN_ADVERTISE && t <= MQTT_SN_WILLMSGRESP)
 
-static const char *MQTT_SN_PACKET_TYPE_NAMES[] = {
-    [MQTT_SN_ADVERTISE]         = "ADVERTISE",
-    [MQTT_SN_SEARCHGW]          = "SEARCHGW",
-    [MQTT_SN_GWINFO]            = "GWINFO",
-    [MQTT_SN_CONNECT]           = "CONNECT",
-    [MQTT_SN_CONNACK]           = "CONNACK",
-    [MQTT_SN_WILLTOPICREQ]      = "WILLTOPICREQ",
-    [MQTT_SN_WILLTOPIC]         = "WILLTOPIC",
-    [MQTT_SN_WILLMSGREQ]        = "WILLMSGREQ",
-    [MQTT_SN_WILLMSG]           = "WILLMSG",
-    [MQTT_SN_REGISTER]          = "REGISTER",
-    [MQTT_SN_REGACK]            = "REGACK",
-    [MQTT_SN_PUBLISH]           = "PUBLISH",
-    [MQTT_SN_PUBACK]            = "PUBACK",
-    [MQTT_SN_PUBCOMP]           = "PUBCOMP",
-    [MQTT_SN_PUBREC]            = "PUBREC",
-    [MQTT_SN_PUBREL]            = "PUBREL",
-    [MQTT_SN_SUBSCRIBE]         = "SUBSCRIBE",
-    [MQTT_SN_SUBACK]            = "SUBACK",
-    [MQTT_SN_UNSUBSCRIBE]       = "UNSUBSCRIBE",
-    [MQTT_SN_UNSUBACK]          = "UNSUBACK",
-    [MQTT_SN_PINGREQ]           = "PINGREQ",
-    [MQTT_SN_PINGRESP]          = "PINGRESP",
-    [MQTT_SN_DISCONNECT]        = "DISCONNECT",
-    [MQTT_SN_WILLTOPICUPD]      = "WILLTOPICUPD",
-    [MQTT_SN_WILLTOPICRESP]     = "WILLTOPICRESP",
-    [MQTT_SN_WILLMSGUPD]        = "WILLMSGUPD",
-    [MQTT_SN_WILLMSGRESP]       = "WILLMSGRESP",
-    [MQTT_SN_ENCAPSULATED]      = "ENCAPSULATED",
-    [MQTT_SN_RESERVED]          = "RESERVED",
-};
-
 static inline const char *
 mqtt_sn_packet_type_name(mqtt_sn_packet_type_t type) {
-    return MQTT_SN_PACKET_TYPE_NAMES[type];
+    switch (type) {
+    case MQTT_SN_ADVERTISE:
+        return "ADVERTISE";
+    case MQTT_SN_SEARCHGW:
+        return "SEARCHGW";
+    case MQTT_SN_GWINFO:
+        return "GWINFO";
+    case MQTT_SN_CONNECT:
+        return "CONNECT";
+    case MQTT_SN_CONNACK:
+        return "CONNACK";
+    case MQTT_SN_WILLTOPICREQ:
+        return "WILLTOPICREQ";
+    case MQTT_SN_WILLTOPIC:
+        return "WILLTOPIC";
+    case MQTT_SN_WILLMSGREQ:
+        return "WILLMSGREQ";
+    case MQTT_SN_WILLMSG:
+        return "WILLMSG";
+    case MQTT_SN_REGISTER:
+        return "REGISTER";
+    case MQTT_SN_REGACK:
+        return "REGACK";
+    case MQTT_SN_PUBLISH:
+        return "PUBLISH";
+    case MQTT_SN_PUBACK:
+        return "PUBACK";
+    case MQTT_SN_PUBCOMP:
+        return "PUBCOMP";
+    case MQTT_SN_PUBREC:
+        return "PUBREC";
+    case MQTT_SN_PUBREL:
+        return "PUBREL";
+    case MQTT_SN_SUBSCRIBE:
+        return "SUBSCRIBE";
+    case MQTT_SN_SUBACK:
+        return "SUBACK";
+    case MQTT_SN_UNSUBSCRIBE:
+        return "UNSUBSCRIBE";
+    case MQTT_SN_UNSUBACK:
+        return "UNSUBACK";
+    case MQTT_SN_PINGREQ:
+        return "PINGREQ";
+    case MQTT_SN_PINGRESP:
+        return "PINGRESP";
+    case MQTT_SN_DISCONNECT:
+        return "DISCONNECT";
+    case MQTT_SN_WILLTOPICUPD:
+        return "WILLTOPICUPD";
+    case MQTT_SN_WILLTOPICRESP:
+        return "WILLTOPICRESP";
+    case MQTT_SN_WILLMSGUPD:
+        return "WILLMSGUPD";
+    case MQTT_SN_WILLMSGRESP:
+        return "WILLMSGRESP";
+    case MQTT_SN_ENCAPSULATED:
+        return "ENCAPSULATED";
+    case MQTT_SN_RESERVED:
+        return "RESERVED";
+    }
 }
 
 /* mqtt connect return code for mattv3.1 and mqttv3.1.1 */
@@ -250,18 +292,22 @@ typedef enum {
 
 #define MQTT_IS_CRC(c) (c >= MQTT_CRC_ACCEPTED && c <= MQTT_CRC_REFUSED_NOT_AUTHORIZED)
 
-static const char *MQTT_CRC_NAMES[] = {
-    [MQTT_CRC_ACCEPTED]                      = "ACCEPTED",
-    [MQTT_CRC_REFUSED_PROTOCOL_VERSION]      = "REFUSED_PROTOCOL_VERSION",
-    [MQTT_CRC_REFUSED_IDENTIFIER_REJECTED]   = "REFUSED_IDENTIFIER_REJECTED",
-    [MQTT_CRC_REFUSED_SERVER_UNAVAILABLE]    = "REFUSED_SERVER_UNAVAILABLE",
-    [MQTT_CRC_REFUSED_BAD_USERNAME_PASSWORD] = "REFUSED_BAD_USERNAME_PASSWORD",
-    [MQTT_CRC_REFUSED_NOT_AUTHORIZED]        = "REFUSED_NOT_AUTHORIZED",
-};
-
 static inline const char *
 mqtt_crc_name(mqtt_crc_t crc) {
-    return MQTT_CRC_NAMES[crc];
+    switch (crc) {
+    case MQTT_CRC_ACCEPTED:
+        return "ACCEPTED";
+    case MQTT_CRC_REFUSED_PROTOCOL_VERSION:
+        return "REFUSED_PROTOCOL_VERSION";
+    case MQTT_CRC_REFUSED_IDENTIFIER_REJECTED:
+        return "REFUSED_IDENTIFIER_REJECTED";
+    case MQTT_CRC_REFUSED_SERVER_UNAVAILABLE:
+        return "REFUSED_SERVER_UNAVAILABLE";
+    case MQTT_CRC_REFUSED_BAD_USERNAME_PASSWORD:
+        return "REFUSED_BAD_USERNAME_PASSWORD";
+    case MQTT_CRC_REFUSED_NOT_AUTHORIZED:
+        return "REFUSED_NOT_AUTHORIZED";
+    }
 }
 
 /* mqtt subscribe return code for mattv3.1.1 */
@@ -274,16 +320,18 @@ typedef enum {
 
 #define MQTT_IS_SRC(c) ((c >= MQTT_SRC_QOS_0 && c <= MQTT_SRC_QOS_2) || c == MQTT_SRC_QOS_F)
 
-static const char *MQTT_SRC_NAMES[] = {
-    [MQTT_SRC_QOS_0]    = "Success - Maximum QoS 0",
-    [MQTT_SRC_QOS_1]    = "Success - Maximum QoS 1",
-    [MQTT_SRC_QOS_2]    = "Success - Maximum QoS 2",
-    [MQTT_SRC_QOS_F]    = "Failure",
-};
-
 static inline const char *
 mqtt_src_name(mqtt_src_t src) {
-    return MQTT_SRC_NAMES[src];
+    switch (src) {
+    case MQTT_SRC_QOS_0:
+        return "Success - Maximum QoS 0";
+    case MQTT_SRC_QOS_1:
+        return "Success - Maximum QoS 1";
+    case MQTT_SRC_QOS_2:
+        return "Success - Maximum QoS 2";
+    case MQTT_SRC_QOS_F:
+        return "Failure";
+    }
 }
 
 static inline mqtt_src_t
@@ -605,16 +653,18 @@ typedef enum {
 
 #define MQTT_SN_IS_RC(c) (c >= MQTT_SN_RC_ACCEPTED && c <= MQTT_SN_RC_REJECTED_NOT_SUPPORTED)
 
-static const char *MQTT_SN_RC_NAMES[] = {
-    [MQTT_SN_RC_ACCEPTED]                  = "ACCEPTED",
-    [MQTT_SN_RC_REJECTED_CONGESTION]       = "REJECTED_CONGESTION",
-    [MQTT_SN_RC_REJECTED_TOPIC_ID]         = "REJECTED_TOPIC_ID",
-    [MQTT_SN_RC_REJECTED_NOT_SUPPORTED]    = "REJECTED_NOT_SUPPORTED",
-};
-
 static inline const char *
 mqtt_sn_rc_name(mqtt_sn_rc_t rc) {
-    return MQTT_SN_RC_NAMES[rc];
+    switch (rc) {
+    case MQTT_SN_RC_ACCEPTED:
+        return "ACCEPTED";
+    case MQTT_SN_RC_REJECTED_CONGESTION:
+        return "REJECTED_CONGESTION";
+    case MQTT_SN_RC_REJECTED_TOPIC_ID:
+        return "REJECTED_TOPIC_ID";
+    case MQTT_SN_RC_REJECTED_NOT_SUPPORTED:
+        return "REJECTED_NOT_SUPPORTED";
+    }
 }
 
 /* mqtt property code for mqttv5.0 */
@@ -664,150 +714,191 @@ typedef enum {
 } mqtt_property_type_t;
 
 static struct {
+    mqtt_property_code_t code;
     const char *name;
     mqtt_property_type_t type;
     mqtt_packet_type_t types[MQTT_AUTH];
     int will;
 } MQTT_PROPERTY_DEFS[] = {
-    [MQTT_PROPERTY_PAYLOAD_FORMAT_INDICATOR] = {
+    {
+        MQTT_PROPERTY_PAYLOAD_FORMAT_INDICATOR,
         "Payload Format Indicator",
         MQTT_PROPERTY_TYPE_BYTE,
         { MQTT_PUBLISH }, 1
     },
-    [MQTT_PROPERTY_MESSAGE_EXPIRY_INTERVAL] = {
+    {
+        MQTT_PROPERTY_MESSAGE_EXPIRY_INTERVAL,
         "Message Expiry Interval",
         MQTT_PROPERTY_TYPE_FOUR_BYTE_INTEGER,
         { MQTT_PUBLISH }, 1
     },
-    [MQTT_PROPERTY_CONTENT_TYPE] = {
+    {
+        MQTT_PROPERTY_CONTENT_TYPE,
         "Content Type",
         MQTT_PROPERTY_TYPE_UTF_8_ENCODED_STRING,
         { MQTT_PUBLISH }, 1
     },
-    [MQTT_PROPERTY_RESPONSE_TOPIC] = {
+    {
+        MQTT_PROPERTY_RESPONSE_TOPIC,
         "Response Topic",
         MQTT_PROPERTY_TYPE_UTF_8_ENCODED_STRING,
         { MQTT_PUBLISH }, 1
     },
-    [MQTT_PROPERTY_CORRELATION_DATA] = {
+    {
+        MQTT_PROPERTY_CORRELATION_DATA,
         "Correlation Data",
         MQTT_PROPERTY_TYPE_BINARY_DATA,
         { MQTT_PUBLISH }, 1
     },
-    [MQTT_PROPERTY_SUBSCRIPTION_IDENTIFIER] = {
+    {
+        MQTT_PROPERTY_SUBSCRIPTION_IDENTIFIER,
         "Subscription Identifier",
         MQTT_PROPERTY_TYPE_VARIABLE_BYTE_INTEGER,
         { MQTT_PUBLISH, MQTT_SUBSCRIBE }, 0
     },
-    [MQTT_PROPERTY_SESSION_EXPIRY_INTERVAL] = {
+    {
+        MQTT_PROPERTY_SESSION_EXPIRY_INTERVAL,
         "Session Expiry Interval",
         MQTT_PROPERTY_TYPE_FOUR_BYTE_INTEGER,
         { MQTT_CONNECT, MQTT_CONNACK, MQTT_DISCONNECT }, 0
     },
-    [MQTT_PROPERTY_ASSIGNED_CLIENT_IDENTIFER] = {
+    {
+        MQTT_PROPERTY_ASSIGNED_CLIENT_IDENTIFER,
         "Assigned Client Identifier",
         MQTT_PROPERTY_TYPE_UTF_8_ENCODED_STRING,
         { MQTT_CONNACK }, 0
     },
-    [MQTT_PROPERTY_SERVER_KEEP_ALIVE] = {
+    {
+        MQTT_PROPERTY_SERVER_KEEP_ALIVE,
         "Server Keep Alive",
         MQTT_PROPERTY_TYPE_TWO_BYTE_INTEGER,
         { MQTT_CONNACK }, 0
     },
-    [MQTT_PROPERTY_AUTHENTICATION_METHOD] = {
+    {
+        MQTT_PROPERTY_AUTHENTICATION_METHOD,
         "Authentication Method",
         MQTT_PROPERTY_TYPE_UTF_8_ENCODED_STRING,
         { MQTT_CONNECT, MQTT_CONNACK, MQTT_AUTH }, 0
     },
-    [MQTT_PROPERTY_AUTHENTICATION_DATA] = {
+    {
+        MQTT_PROPERTY_AUTHENTICATION_DATA,
         "Authentication Data",
         MQTT_PROPERTY_TYPE_BINARY_DATA,
         { MQTT_CONNECT, MQTT_CONNACK, MQTT_AUTH }, 0
     },
-    [MQTT_PROPERTY_REQUEST_PROBLEM_INFORMATION] = {
+    {
+        MQTT_PROPERTY_REQUEST_PROBLEM_INFORMATION,
         "Request Problem Information",
         MQTT_PROPERTY_TYPE_BYTE,
         { MQTT_CONNECT }, 0
     },
-    [MQTT_PROPERTY_WILL_DELAY_INTERVAL] = {
+    {
+        MQTT_PROPERTY_WILL_DELAY_INTERVAL,
         "Will Delay Interval",
         MQTT_PROPERTY_TYPE_FOUR_BYTE_INTEGER,
         { MQTT_RESERVED }, 1
     },
-    [MQTT_PROPERTY_REQUEST_RESPONSE_INFORMATION] = {
+    {
+        MQTT_PROPERTY_REQUEST_RESPONSE_INFORMATION,
         "Request Response Information",
         MQTT_PROPERTY_TYPE_BYTE,
         { MQTT_CONNECT }, 0
     },
-    [MQTT_PROPERTY_RESPONSE_INFORMATION] = {
+    {
+        MQTT_PROPERTY_RESPONSE_INFORMATION,
         "Response Information",
         MQTT_PROPERTY_TYPE_UTF_8_ENCODED_STRING,
         { MQTT_CONNACK }, 0
     },
-    [MQTT_PROPERTY_SERVER_REFERENCE] = {
+    {
+        MQTT_PROPERTY_SERVER_REFERENCE,
         "Server Reference",
         MQTT_PROPERTY_TYPE_UTF_8_ENCODED_STRING,
         { MQTT_CONNACK, MQTT_DISCONNECT }, 0
     },
-    [MQTT_PROPERTY_REASON_STRING] = {
+    {
+        MQTT_PROPERTY_REASON_STRING,
         "Reason String",
         MQTT_PROPERTY_TYPE_UTF_8_ENCODED_STRING,
         { MQTT_CONNACK, MQTT_PUBACK, MQTT_PUBREC, MQTT_PUBREL, MQTT_PUBCOMP,
         MQTT_SUBACK, MQTT_UNSUBACK, MQTT_DISCONNECT, MQTT_AUTH }, 0
     },
-    [MQTT_PROPERTY_RECEIVE_MAXIMUM] = {
+    {
+        MQTT_PROPERTY_RECEIVE_MAXIMUM,
         "Receive Maximum",
         MQTT_PROPERTY_TYPE_TWO_BYTE_INTEGER,
         { MQTT_CONNECT, MQTT_CONNACK }, 0
     },
-    [MQTT_PROPERTY_TOPIC_ALIAS_MAXIMUM] = {
+    {
+        MQTT_PROPERTY_TOPIC_ALIAS_MAXIMUM,
         "Topic Alias Maximum",
         MQTT_PROPERTY_TYPE_TWO_BYTE_INTEGER,
         { MQTT_CONNECT, MQTT_CONNACK }, 0
     },
-    [MQTT_PROPERTY_TOPIC_ALIAS] = {
+    {
+        MQTT_PROPERTY_TOPIC_ALIAS,
         "Topic Alias",
         MQTT_PROPERTY_TYPE_TWO_BYTE_INTEGER,
         { MQTT_PUBLISH }, 0
     },
-    [MQTT_PROPERTY_MAXIMUM_QOS] = {
+    {
+        MQTT_PROPERTY_MAXIMUM_QOS,
         "Maximum QoS",
         MQTT_PROPERTY_TYPE_BYTE,
         { MQTT_CONNACK }, 0
     },
-    [MQTT_PROPERTY_RETAIN_AVAILABLE] = {
+    {
+        MQTT_PROPERTY_RETAIN_AVAILABLE,
         "Retain Available",
         MQTT_PROPERTY_TYPE_BYTE,
         { MQTT_CONNACK }, 0
     },
-    [MQTT_PROPERTY_USER_PROPERTY] = {
+    {
+        MQTT_PROPERTY_USER_PROPERTY,
         "User Property",
         MQTT_PROPERTY_TYPE_UTF_8_STRING_PAIR,
         { MQTT_CONNECT, MQTT_CONNACK, MQTT_PUBLISH, MQTT_PUBACK, MQTT_PUBREC, MQTT_PUBREL,
         MQTT_PUBCOMP, MQTT_SUBSCRIBE, MQTT_SUBACK, MQTT_UNSUBSCRIBE, MQTT_UNSUBACK,
         MQTT_DISCONNECT, MQTT_AUTH }, 1
     },
-    [MQTT_PROPERTY_MAXIMUM_PACKET_SIZE] = {
+    {
+        MQTT_PROPERTY_MAXIMUM_PACKET_SIZE,
         "Maximum Packet Size",
         MQTT_PROPERTY_TYPE_FOUR_BYTE_INTEGER,
         { MQTT_CONNECT, MQTT_CONNACK }, 0
     },
-    [MQTT_PROPERTY_WILDCARD_SUBSCRIPTION_AVAILABLE] = {
+    {
+        MQTT_PROPERTY_WILDCARD_SUBSCRIPTION_AVAILABLE,
         "Wildcard Subscription Available",
         MQTT_PROPERTY_TYPE_BYTE,
         { MQTT_CONNACK }, 0
     },
-    [MQTT_PROPERTY_SUBSCRIPTION_IDENTIFIERS_AVAILABLE] = {
+    {
+        MQTT_PROPERTY_SUBSCRIPTION_IDENTIFIERS_AVAILABLE,
         "Subscription Identifier Available",
         MQTT_PROPERTY_TYPE_BYTE,
         { MQTT_CONNACK }, 0
     },
-    [MQTT_PROPERTY_SHARED_SUBSCRIPTION_AVAILABLE] = {
+    {
+        MQTT_PROPERTY_SHARED_SUBSCRIPTION_AVAILABLE,
         "Shared Subscription Available",
         MQTT_PROPERTY_TYPE_BYTE,
         { MQTT_CONNACK }, 0
     },
 };
+
+static inline mqtt_property_type_t
+mqtt_property_type(mqtt_property_code_t code) {
+    int i, n;
+
+    n = sizeof(MQTT_PROPERTY_DEFS) / sizeof(MQTT_PROPERTY_DEFS[0]);
+    for (i = 0; i < n; i++) {
+        if (MQTT_PROPERTY_DEFS[i].code == code) {
+            return MQTT_PROPERTY_DEFS[i].type;
+        }
+    }
+    return MQTT_PROPERTY_TYPE_BYTE;
+}
 
 typedef enum {
     MQTT_SN_TOPIC_ID_TYPE_NORMAL = 0b00,
@@ -1803,14 +1894,18 @@ mqtt_fixed_valid(mqtt_fixed_header_t *f, uint8_t retain, uint8_t qos, uint8_t du
 
 static inline int
 mqtt_property_valid(mqtt_property_code_t code, mqtt_packet_type_t type, int will) {
-    int i;
+    int i, j, n;
 
-    if (will)
-        return MQTT_PROPERTY_DEFS[code].will;
-
-    for (i = 0; i < MQTT_AUTH; i++) {
-        if (MQTT_PROPERTY_DEFS[code].types[i] == type)
-            return 1;
+    n = sizeof(MQTT_PROPERTY_DEFS) / sizeof(MQTT_PROPERTY_DEFS[0]);
+    for (i = 0; i < n; i++) {
+        if (MQTT_PROPERTY_DEFS[i].code == code) {
+            if (will)
+                return MQTT_PROPERTY_DEFS[i].will;
+            for (j = 0; j < MQTT_AUTH; j++) {
+                if (MQTT_PROPERTY_DEFS[i].types[j] == type)
+                    return 1;
+            }
+        }
     }
     return 0;
 }
@@ -1975,7 +2070,7 @@ mqtt_packet_init(mqtt_packet_t *pkt, mqtt_version_t ver, mqtt_packet_type_t type
     pkt->ver = ver;
     pkt->f.bits.type = type;
     if (type == MQTT_CONNECT) {
-        mqtt_str_from(&pkt->v.connect.protocol_name, MQTT_PROTOCOL_NAMES[pkt->ver]);
+        mqtt_str_from(&pkt->v.connect.protocol_name, mqtt_protocol_name(pkt->ver));
         pkt->v.connect.protocol_version = pkt->ver;
     }
 }
@@ -2062,7 +2157,7 @@ __property_parse(mqtt_property_t *property, mqtt_str_t *b) {
     property->code = (mqtt_property_code_t)mqtt_str_read_u8(b);
 
     len = 1;
-    type = MQTT_PROPERTY_DEFS[property->code].type;
+    type = mqtt_property_type(property->code);
     switch (type) {
     case MQTT_PROPERTY_TYPE_BYTE:
         if (b->n < 1)
@@ -2955,7 +3050,7 @@ __property_serialize(const mqtt_property_t *property, mqtt_str_t *b) {
 
     mqtt_str_write_u8(b, (uint8_t)property->code);
 
-    type = MQTT_PROPERTY_DEFS[property->code].type;
+    type = mqtt_property_type(property->code);
     switch (type) {
     case MQTT_PROPERTY_TYPE_BYTE:
         mqtt_str_write_u8(b, property->b1);
@@ -3560,7 +3655,7 @@ mqtt_properties_add(mqtt_properties_t *properties, mqtt_property_code_t code, co
     size_t len;
 
     len = 0;
-    type = MQTT_PROPERTY_DEFS[code].type;
+    type = mqtt_property_type(code);
     property = (mqtt_property_t *)malloc(sizeof *property);
     memset(property, 0, sizeof *property);
     property->code = code;
@@ -3629,7 +3724,7 @@ mqtt_properties_remove(mqtt_properties_t *properties, mqtt_property_code_t code)
             size_t len;
 
             len = 0;
-            type = MQTT_PROPERTY_DEFS[property->code].type;
+            type = mqtt_property_type(property->code);
 
             switch (type) {
             case MQTT_PROPERTY_TYPE_BYTE:
