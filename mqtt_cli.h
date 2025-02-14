@@ -31,6 +31,8 @@
 
 #include "mqtt.h"
 
+#include <threads.h>
+
 typedef struct mqtt_cli_s mqtt_cli_t;
 
 typedef void (*mqtt_cli_callback_pt)(mqtt_cli_t *m, void *ud, const mqtt_packet_t *pkt);
@@ -124,6 +126,7 @@ struct mqtt_cli_s {
     uint16_t packet_id;
     mqtt_parser_t parser;
     mqtt_cli_packet_t *padding;
+    mtx_t padding_lock;
 
     struct {
         mqtt_cli_callback_pt connack;
@@ -151,6 +154,7 @@ static void
 _clear_padding(mqtt_cli_t *m) {
     mqtt_cli_packet_t *mp;
 
+    mtx_lock(&m->padding_lock);
     mp = m->padding;
     while (mp) {
         mqtt_cli_packet_t *next;
@@ -160,6 +164,7 @@ _clear_padding(mqtt_cli_t *m) {
         free(mp);
         mp = next;
     }
+    mtx_unlock(&m->padding_lock);
 }
 
 static int
@@ -168,6 +173,8 @@ _check_padding(mqtt_cli_t *m) {
     int rc;
 
     rc = 0;
+
+    mtx_lock(&m->padding_lock);
     mp = m->padding;
     while (mp) {
         if (mp->ttl > 0 && m->t.now - mp->t_send >= MQTT_CLI_PACKET_TIMEOUT * 1000) {
@@ -183,6 +190,8 @@ _check_padding(mqtt_cli_t *m) {
         }
         mp = mp->next;
     }
+    mtx_unlock(&m->padding_lock);
+
     return rc;
 }
 
@@ -203,7 +212,10 @@ _check_keepalive(mqtt_cli_t *m) {
 static int
 _erase_padding(mqtt_cli_t *m, mqtt_packet_type_t type, uint16_t packet_id) {
     mqtt_cli_packet_t *mp, **pmp;
+    int ret;
 
+    ret = -1;
+    mtx_lock(&m->padding_lock);
     pmp = &m->padding;
     while (*pmp) {
         mp = *pmp;
@@ -211,11 +223,14 @@ _erase_padding(mqtt_cli_t *m, mqtt_packet_type_t type, uint16_t packet_id) {
             *pmp = mp->next;
             mqtt_str_free(&mp->b);
             free(mp);
-            return 0;
+            ret = 0;
+            break;
         }
         pmp = &mp->next;
     }
-    return -1;
+    mtx_unlock(&m->padding_lock);
+
+    return ret;
 }
 
 static int
@@ -246,6 +261,7 @@ _append_padding(mqtt_cli_t *m, mqtt_packet_t *pkt) {
             break;
         }
 
+        mtx_lock(&m->padding_lock);
         if (!m->padding)
             m->padding = mp;
         else {
@@ -257,6 +273,7 @@ _append_padding(mqtt_cli_t *m, mqtt_packet_t *pkt) {
             }
             p->next = mp;
         }
+        mtx_unlock(&m->padding_lock);
     } else {
         mqtt_str_free(&b);
     }
@@ -525,6 +542,8 @@ mqtt_cli_outgoing(mqtt_cli_t *m, mqtt_str_t *outgoing) {
     mqtt_cli_packet_t *mp;
 
     mqtt_str_init(outgoing, 0, 0);
+
+    mtx_lock(&m->padding_lock);
     mp = m->padding;
     while (mp) {
         if (mp->wait_ack == 0) {
@@ -557,6 +576,7 @@ mqtt_cli_outgoing(mqtt_cli_t *m, mqtt_str_t *outgoing) {
         }
         m->t.send = m->t.now;
     }
+    mtx_unlock(&m->padding_lock);
 
     return 0;
 }
@@ -638,13 +658,13 @@ linux_tcp_connect(const char *host, int port) {
         if ((fd = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == -1) {
             continue;
         }
+        setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
+        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
         if (connect(fd, p->ai_addr, p->ai_addrlen) == -1) {
             close(fd);
             fd = -1;
             continue;
         }
-        setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
-        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
         setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &on, sizeof(on));
     }
     freeaddrinfo(servinfo);
