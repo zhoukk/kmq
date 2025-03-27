@@ -74,7 +74,17 @@ typedef enum {
     MQTT_VERSION_5 = 0x05  /* mqttv5.0 */
 } mqtt_version_t;
 
-#define MQTT_IS_VERSION(v) (v >= MQTT_VERSION_3 && v <= MQTT_VERSION_5)
+static inline bool
+mqtt_is_valid_version(mqtt_version_t version) {
+    switch (version) {
+        case MQTT_VERSION_3:
+        case MQTT_VERSION_4:
+        case MQTT_VERSION_5:
+            return true;
+        default:
+            return false;
+    }
+}
 
 static inline const char *
 mqtt_protocol_name(mqtt_version_t version) {
@@ -3598,7 +3608,7 @@ mqtt_serialize(mqtt_packet_t *pkt, mqtt_str_t *b) {
     int rc;
 
     mqtt_str_init(b, 0, 0);
-    if (!MQTT_IS_VERSION(pkt->ver)) {
+    if (!mqtt_is_valid_version(pkt->ver)) {
         return -1;
     }
     switch (pkt->f.bits.type) {
