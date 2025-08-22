@@ -74,15 +74,15 @@ typedef enum {
     MQTT_VERSION_5 = 0x05  /* mqttv5.0 */
 } mqtt_version_t;
 
-static inline bool
+static inline int
 mqtt_is_valid_version(mqtt_version_t version) {
     switch (version) {
         case MQTT_VERSION_3:
         case MQTT_VERSION_4:
         case MQTT_VERSION_5:
-            return true;
+            return 1;
         default:
-            return false;
+            return 0;
     }
 }
 
