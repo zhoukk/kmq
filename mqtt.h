@@ -1349,12 +1349,6 @@ typedef struct {
     mqtt_packet_t pkt;
 } mqtt_parser_t;
 
-typedef struct {
-    mqtt_parser_t parser;
-    void *io;
-    ssize_t (*read)(void *io, void *, size_t);
-} mqtt_reader_t;
-
 typedef union {
     uint8_t flag;
     struct {
@@ -1560,12 +1554,6 @@ typedef struct {
     mqtt_sn_packet_t pkt;
 } mqtt_sn_parser_t;
 
-typedef struct {
-    mqtt_sn_parser_t parser;
-    void *io;
-    ssize_t (*read)(void *io, void *, size_t);
-} mqtt_sn_reader_t;
-
 static inline void
 mqtt_str_init(mqtt_str_t *b, char *s, size_t n) {
     b->s = s;
@@ -1575,8 +1563,9 @@ mqtt_str_init(mqtt_str_t *b, char *s, size_t n) {
 static inline void
 mqtt_str_dup(mqtt_str_t *b, const char *s) {
     if (s && strlen(s) > 0) {
-        b->s = strdup(s);
         b->n = strlen(s);
+        b->s = (char *)malloc(b->n);
+        memcpy(b->s, s, b->n);
     }
 }
 
@@ -2005,21 +1994,6 @@ void mqtt_parser_unit(mqtt_parser_t *parser);
 int mqtt_parse(mqtt_parser_t *parser, mqtt_str_t *b, mqtt_packet_t *pkt);
 
 /**
- * mqtt packet reader funcs.
- */
-void mqtt_reader_init(mqtt_reader_t *reader, void *io, ssize_t (*read)(void *io, void *, size_t));
-void mqtt_reader_version(mqtt_reader_t *reader, mqtt_version_t version);
-void mqtt_reader_unit(mqtt_reader_t *reader);
-
-/**
- * read a mqtt packet from reader
- * return:
- *  -1 - mqtt packet read error
- *   1 - read a mqtt packet
- */
-int mqtt_read(mqtt_reader_t *reader, mqtt_packet_t *pkt);
-
-/**
  * mqtt property functions
  */
 void mqtt_properties_add(mqtt_properties_t *properties, mqtt_property_code_t code, const void *value, const char *name);
@@ -2049,20 +2023,6 @@ void mqtt_sn_parser_unit(mqtt_sn_parser_t *parser);
  *   1 - a mqtt-sn packet has parsed
  */
 int mqtt_sn_parse(mqtt_sn_parser_t *parser, mqtt_str_t *b, mqtt_sn_packet_t *pkt);
-
-/**
- * mqtt-sn packet reader funcs.
- */
-void mqtt_sn_reader_init(mqtt_sn_reader_t *reader, void *io, ssize_t (*read)(void *io, void *, size_t));
-void mqtt_sn_reader_unit(mqtt_sn_reader_t *reader);
-
-/**
- * read a mqtt-sn packet from reader
- * return:
- *  -1 - mqtt-sn packet read error
- *   1 - read a mqtt-sn packet
- */
-int mqtt_sn_read(mqtt_sn_reader_t *reader, mqtt_sn_packet_t *pkt);
 
 #endif /* _MQTT_H_ */
 
@@ -2164,52 +2124,54 @@ __properties_len(const mqtt_properties_t *properties) {
     return properties->length + mqtt_vbi_length(properties->length);
 }
 
-static ssize_t
+static int
 __property_parse(mqtt_property_t *property, mqtt_str_t *b) {
     mqtt_property_type_t type;
-    size_t n, len;
 
     if (!b->n)
         return -1;
     property->code = (mqtt_property_code_t)mqtt_str_read_u8(b);
 
-    len = 1;
     type = mqtt_property_type(property->code);
     switch (type) {
     case MQTT_PROPERTY_TYPE_BYTE:
         if (b->n < 1)
             return -1;
         property->b1 = mqtt_str_read_u8(b);
-        len += 1;
         break;
     case MQTT_PROPERTY_TYPE_TWO_BYTE_INTEGER:
         if (b->n < 2)
             return -1;
         property->b2 = mqtt_str_read_u16(b);
-        len += 2;
         break;
     case MQTT_PROPERTY_TYPE_FOUR_BYTE_INTEGER:
         if (b->n < 4)
             return -1;
         property->b4 = mqtt_str_read_u32(b);
-        len += 4;
         break;
     case MQTT_PROPERTY_TYPE_VARIABLE_BYTE_INTEGER:
-        property->bv = mqtt_str_read_vbi(b, &n);
-        len += n;
+        property->bv = mqtt_str_read_vbi(b, 0);
         break;
     case MQTT_PROPERTY_TYPE_BINARY_DATA:
-        len += mqtt_str_read_utf(b, &property->data);
+        if (b->n < 2)
+            return -1;
+        mqtt_str_read_utf(b, &property->data);
         break;
     case MQTT_PROPERTY_TYPE_UTF_8_ENCODED_STRING:
-        len += mqtt_str_read_utf(b, &property->str);
+        if (b->n < 2)
+            return -1;
+        mqtt_str_read_utf(b, &property->str);
         break;
     case MQTT_PROPERTY_TYPE_UTF_8_STRING_PAIR:
-        len += mqtt_str_read_utf(b, &property->pair.name);
-        len += mqtt_str_read_utf(b, &property->pair.value);
+        if (b->n < 2)
+            return -1;
+        mqtt_str_read_utf(b, &property->pair.name);
+        if (b->n < 2)
+            return -1;
+        mqtt_str_read_utf(b, &property->pair.value);
         break;
     }
-    return len;
+    return 0;
 }
 
 static int
@@ -2223,16 +2185,17 @@ __properties_parse(mqtt_properties_t *properties, mqtt_str_t *b) {
     properties->length = length;
     while (length > 0) {
         mqtt_property_t *property;
-        ssize_t len;
+        size_t len1, len2;
 
         property = (mqtt_property_t *)malloc(sizeof *property);
         memset(property, 0, sizeof *property);
-        len = __property_parse(property, b);
-        if (-1 == len) {
+        len1 = b->n;
+        if (__property_parse(property, b)) {
             free(property);
             return -1;
         }
-        length -= len;
+        len2 = b->n;
+        length -= (len1 - len2);
 
         property->next = properties->head;
         properties->head = property;
@@ -2926,6 +2889,10 @@ mqtt_parse(mqtt_parser_t *parser, mqtt_str_t *b, mqtt_packet_t *pkt) {
             break;
         case MQTT_ST_LENGTH:
             parser->pkt.b.n += (k & 0x7F) * parser->multiplier;
+            if (parser->pkt.b.n >= (1 << 28)) {
+                rc = -1;
+                goto e;
+            }
             if (parser->multiplier > 0x80 * 0x80 * 0x80) {
                 rc = -1;
                 goto e;
@@ -2948,7 +2915,12 @@ mqtt_parse(mqtt_parser_t *parser, mqtt_str_t *b, mqtt_packet_t *pkt) {
             c++;
             break;
         case MQTT_ST_REMAIN:
-            offset = parser->pkt.b.n - parser->require;
+            if (!parser->pkt.b.s) {
+                rc = -1;
+                goto e;
+            }
+            
+            offset = parser->pkt.b.n - parser->require;            
             if ((size_t)(e - c) >= parser->require) {
                 memcpy(parser->pkt.b.s + offset, c, parser->require);
                 c += parser->require;
@@ -2969,94 +2941,14 @@ mqtt_parse(mqtt_parser_t *parser, mqtt_str_t *b, mqtt_packet_t *pkt) {
 e:
     if (rc == 1) {
         *pkt = parser->pkt;
-    }
-    return rc;
-}
-
-void
-mqtt_reader_init(mqtt_reader_t *reader, void *io, ssize_t (*read)(void *io, void *, size_t)) {
-    reader->io = io;
-    reader->read = read;
-    mqtt_parser_init(&reader->parser);
-}
-
-void
-mqtt_reader_version(mqtt_reader_t *reader, mqtt_version_t version) {
-    mqtt_parser_version(&reader->parser, version);
-}
-
-void
-mqtt_reader_unit(mqtt_reader_t *reader) {
-    mqtt_parser_unit(&reader->parser);
-}
-
-int
-mqtt_read(mqtt_reader_t *reader, mqtt_packet_t *pkt) {
-    mqtt_parser_t *parser;
-    int rc;
-
-    parser = &reader->parser;
-    parser->require = 1;
-    parser->state = MQTT_ST_FIXED;
-    rc = 0;
-
-    while (1) {
-        ssize_t nread;
-        uint8_t k;
-        char *buff;
-        if (parser->state == MQTT_ST_REMAIN) {
-            buff = (char *)malloc(parser->require);
-        } else {
-            buff = (char *)&k;
+        parser->pkt.b.s = NULL;
+        parser->pkt.b.n = 0;
+    } else if (rc == -1) {
+        if (parser->pkt.b.s) {
+            free(parser->pkt.b.s);
+            parser->pkt.b.s = NULL;
         }
-        nread = reader->read(reader->io, buff, parser->require);
-        if ((size_t)nread != parser->require) {
-            rc = -1;
-            goto e;
-        }
-        switch (parser->state) {
-        case MQTT_ST_FIXED:
-            memset(&parser->pkt, 0, sizeof parser->pkt);
-            parser->pkt.f.flags = k;
-            if (!MQTT_IS_PACKET_TYPE(parser->pkt.f.bits.type)) {
-                rc = -1;
-                goto e;
-            }
-            parser->state = MQTT_ST_LENGTH;
-            parser->multiplier = 1;
-            parser->require = 1;
-            break;
-        case MQTT_ST_LENGTH:
-            parser->pkt.b.n += (k & 0x7F) * parser->multiplier;
-            if (parser->multiplier > 0x80 * 0x80 * 0x80) {
-                rc = -1;
-                goto e;
-            }
-            if (parser->pkt.b.n >= (1 << 28)) {
-                rc = -1;
-                goto e;
-            }
-            parser->multiplier *= 0x80;
-            if ((k & 0x80) == 0) {
-                parser->require = parser->pkt.b.n;
-                if (parser->require > 0) {
-                    parser->state = MQTT_ST_REMAIN;
-                } else {
-                    rc = __process(parser);
-                    goto e;
-                }
-            }
-            break;
-        case MQTT_ST_REMAIN:
-            parser->pkt.b.s = buff;
-            rc = __process(parser);
-            goto e;
-        }
-    }
-
-e:
-    if (rc == 1) {
-        *pkt = parser->pkt;
+        parser->pkt.b.n = 0;
     }
     return rc;
 }
@@ -4332,104 +4224,12 @@ mqtt_sn_parse(mqtt_sn_parser_t *parser, mqtt_str_t *b, mqtt_sn_packet_t *pkt) {
 e:
     if (rc == 1) {
         *pkt = parser->pkt;
-    }
-    return rc;
-}
-
-void
-mqtt_sn_reader_init(mqtt_sn_reader_t *reader, void *io, ssize_t (*read)(void *io, void *, size_t)) {
-    reader->io = io;
-    reader->read = read;
-    mqtt_sn_parser_init(&reader->parser);
-}
-
-void
-mqtt_sn_reader_unit(mqtt_sn_reader_t *reader) {
-    mqtt_sn_parser_unit(&reader->parser);
-}
-
-int
-mqtt_sn_read(mqtt_sn_reader_t *reader, mqtt_sn_packet_t *pkt) {
-    mqtt_sn_parser_t *parser;
-    int rc;
-
-    parser = &reader->parser;
-    parser->multiplier = 0;
-    parser->require = 0;
-    rc = 0;
-
-    while (1) {
-        ssize_t nread;
-        uint8_t k;
-        char *buff;
-        size_t required;
-
-        if (parser->state == MQTT_SN_ST_REMAIN) {
-            buff = (char *)malloc(parser->require);
-            required = parser->require;
-        } else {
-            buff = (char *)&k;
-            required = 1;
+    } else if (rc == -1) {
+        if (parser->pkt.b.s) {
+            free(parser->pkt.b.s);
+            parser->pkt.b.s = NULL;
         }
-        nread = reader->read(reader->io, buff, required);
-        if ((size_t)nread != required) {
-            rc = -1;
-            goto e;
-        }
-        switch (parser->state) {
-        case MQTT_SN_ST_LENGTH:
-            memset(&parser->pkt, 0, sizeof parser->pkt);
-            if (parser->multiplier == 1) {
-                parser->require = k * 0x80;
-                parser->multiplier = 2;
-            } else if (parser->multiplier == 2) {
-                parser->require += k;
-                if (parser->require < 0x100) {
-                    rc = -1;
-                    goto e;
-                }
-                parser->require -= 3;
-                if (parser->require < 1) {
-                    rc = -1;
-                    goto e;
-                }
-                parser->state = MQTT_SN_ST_TYPE;
-            } else if (k == 0x01) {
-                parser->multiplier = 1;
-            } else {
-                parser->require = k - 1;
-                if (parser->require < 1) {
-                    rc = -1;
-                    goto e;
-                }
-                parser->state = MQTT_SN_ST_TYPE;
-            }
-            break;
-        case MQTT_SN_ST_TYPE:
-            parser->pkt.type = (mqtt_sn_packet_type_t)k;
-            if (!MQTT_SN_IS_PACKET_TYPE(parser->pkt.type)) {
-                rc = -1;
-                goto e;
-            }
-            parser->require -= 1;
-            if (parser->require == 0) {
-                parser->state = MQTT_SN_ST_LENGTH;
-                rc = __sn_process(parser);
-                goto e;
-            }
-            parser->state = MQTT_SN_ST_REMAIN;
-            break;
-        case MQTT_SN_ST_REMAIN:
-            parser->pkt.b.n = parser->require;
-            parser->pkt.b.s = buff;
-            rc = __sn_process(parser);
-            goto e;
-        }
-    }
-
-e:
-    if (rc == 1) {
-        *pkt = parser->pkt;
+        parser->pkt.b.n = 0;
     }
     return rc;
 }
