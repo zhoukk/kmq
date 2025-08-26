@@ -1604,11 +1604,16 @@ mqtt_str_dup(mqtt_str_t *b, const char *s) {
         return -1;
 
     b->n = strlen(s);
+    b->i = 0;
     if (b->n > 0) {
         b->s = (char *)malloc(b->n);
-        if (!b->s)
+        if (!b->s) {
+            b->n = 0;
             return -1;
+        }
         memcpy(b->s, s, b->n);
+    } else {
+        b->s = 0;
     }
 
     return 0;
@@ -1620,9 +1625,12 @@ mqtt_str_dup_n(mqtt_str_t *b, const char *s, size_t n) {
         return -1;
 
     b->n = n;
+    b->i = 0;
     b->s = (char *)malloc(n);
-    if (!b->s)
+    if (!b->s) {
+        b->n = 0;
         return -1;
+    }
     memcpy(b->s, s, n);
 
     return 0;
@@ -1654,12 +1662,17 @@ mqtt_str_copy(mqtt_str_t *b, mqtt_str_t *s) {
     if (!b || !s)
         return -1;
 
+    b->s = 0;
+    b->i = 0;
+    b->n = 0;
+
     if (s->s && s->n > 0) {
         b->s = (char *)malloc(s->n);
         if (!b->s)
             return -1;
         memcpy(b->s, s->s, s->n);
         b->n = s->n;
+        b->i = s->i;
     }
 
     return 0;
@@ -1670,7 +1683,7 @@ mqtt_str_concat(mqtt_str_t *b, const mqtt_str_t *s) {
     if (!b || !s)
         return -1;
 
-    if (b->i + s->n > b->n)
+    if (s->n > 0 && (b->i > SIZE_MAX - s->n || b->i + s->n > b->n))
         return -1;
 
     if (s->s && s->n > 0) {
@@ -1778,7 +1791,8 @@ mqtt_str_read_utf(mqtt_str_t *b, mqtt_str_t *r) {
 
     uint8_t *s = (uint8_t *)(b->s + b->i);
     size_t n = ((*s << 8) + *(s + 1));
-    if (n > 0 && b->i + 2 + n > b->n)
+    
+    if (n > 0 && (b->i > SIZE_MAX - 2 - n || b->i + 2 + n > b->n))
         return -1;
 
     r->n = n;
@@ -1863,12 +1877,16 @@ static inline int
 mqtt_str_write_utf(mqtt_str_t *b, const mqtt_str_t *r) {
     if (!b || !r)
         return -1;
-    if (b->i + 2 + r->n > b->n)
+
+    if (b->i > SIZE_MAX - 2 - r->n || b->i + 2 + r->n > b->n)
+        return -1;
+
+    if (r->n > 0xFFFF)
         return -1;
 
     b->s[b->i++] = (char)((r->n & 0xff00) >> 8);
     b->s[b->i++] = (char)(r->n & 0x00ff);
-    if (r->n > 0) {
+    if (r->n > 0 && r->s) {
         memcpy(&b->s[b->i], r->s, r->n);
         b->i += r->n;
     }
@@ -1921,6 +1939,9 @@ mqtt_str_write_u32(mqtt_str_t *b, uint32_t r) {
 static inline int
 mqtt_str_write_vbi(mqtt_str_t *b, uint32_t vbi) {
     if (!b)
+        return -1;
+
+    if (vbi >= (1U << 28))
         return -1;
 
     do {
