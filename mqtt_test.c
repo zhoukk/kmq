@@ -32,6 +32,7 @@ test_mqtt() {
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
+        bp.i = 0;
 
         mqtt_parser_init(&parser);
         rc = mqtt_parse(&parser, &bp, &pkt);
@@ -67,6 +68,7 @@ test_mqtt() {
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
+        bp.i = 0;
 
         mqtt_parser_init(&parser);
         mqtt_parser_version(&parser, MQTT_VERSION_3);
@@ -96,6 +98,7 @@ test_mqtt() {
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
+        bp.i = 0;
 
         mqtt_parser_init(&parser);
         mqtt_parser_version(&parser, MQTT_VERSION_3);
@@ -128,6 +131,7 @@ test_mqtt() {
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
+        bp.i = 0;
 
         mqtt_parser_init(&parser);
         mqtt_parser_version(&parser, MQTT_VERSION_3);
@@ -158,6 +162,7 @@ test_mqtt() {
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
+        bp.i = 0;
 
         mqtt_parser_init(&parser);
         mqtt_parser_version(&parser, MQTT_VERSION_3);
@@ -185,6 +190,7 @@ test_mqtt() {
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
+        bp.i = 0;
 
         mqtt_parser_init(&parser);
         mqtt_parser_version(&parser, MQTT_VERSION_3);
@@ -214,6 +220,7 @@ test_mqtt() {
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
+        bp.i = 0;
 
         mqtt_parser_init(&parser);
         mqtt_parser_version(&parser, MQTT_VERSION_3);
@@ -243,6 +250,7 @@ test_mqtt() {
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
+        bp.i = 0;
 
         mqtt_parser_init(&parser);
         mqtt_parser_version(&parser, MQTT_VERSION_3);
@@ -267,6 +275,7 @@ test_mqtt() {
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
+        bp.i = 0;
 
         mqtt_parser_init(&parser);
         mqtt_parser_version(&parser, MQTT_VERSION_3);
@@ -291,6 +300,7 @@ test_mqtt() {
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
+        bp.i = 0;
 
         mqtt_parser_init(&parser);
         mqtt_parser_version(&parser, MQTT_VERSION_3);
@@ -315,6 +325,7 @@ test_mqtt() {
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
+        bp.i = 0;
 
         mqtt_parser_init(&parser);
         mqtt_parser_version(&parser, MQTT_VERSION_3);
@@ -338,6 +349,7 @@ test_mqtt() {
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
+        bp.i = 0;
 
         mqtt_parser_init(&parser);
         mqtt_parser_version(&parser, MQTT_VERSION_3);
@@ -360,6 +372,7 @@ test_mqtt() {
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
+        bp.i = 0;
 
         mqtt_parser_init(&parser);
         mqtt_parser_version(&parser, MQTT_VERSION_3);
@@ -382,6 +395,7 @@ test_mqtt() {
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
+        bp.i = 0;
 
         mqtt_parser_init(&parser);
         mqtt_parser_version(&parser, MQTT_VERSION_3);
@@ -424,6 +438,7 @@ test_mqtt() {
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
+        bp.i = 0;
 
         mqtt_parser_init(&parser);
         rc = mqtt_parse(&parser, &bp, &pkt);
@@ -459,6 +474,7 @@ test_mqtt() {
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
+        bp.i = 0;
 
         mqtt_parser_init(&parser);
         mqtt_parser_version(&parser, MQTT_VERSION_4);
@@ -489,6 +505,7 @@ test_mqtt() {
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
+        bp.i = 0;
 
         mqtt_parser_init(&parser);
         mqtt_parser_version(&parser, MQTT_VERSION_4);
@@ -521,6 +538,7 @@ test_mqtt() {
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
+        bp.i = 0;
 
         mqtt_parser_init(&parser);
         mqtt_parser_version(&parser, MQTT_VERSION_4);
@@ -551,6 +569,7 @@ test_mqtt() {
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
+        bp.i = 0;
 
         mqtt_parser_init(&parser);
         mqtt_parser_version(&parser, MQTT_VERSION_4);
@@ -578,6 +597,7 @@ test_mqtt() {
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
+        bp.i = 0;
 
         mqtt_parser_init(&parser);
         mqtt_parser_version(&parser, MQTT_VERSION_4);
@@ -607,6 +627,7 @@ test_mqtt() {
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
+        bp.i = 0;
 
         mqtt_parser_init(&parser);
         mqtt_parser_version(&parser, MQTT_VERSION_4);
@@ -636,6 +657,7 @@ test_mqtt() {
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
+        bp.i = 0;
 
         mqtt_parser_init(&parser);
         mqtt_parser_version(&parser, MQTT_VERSION_4);
@@ -660,6 +682,7 @@ test_mqtt() {
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
+        bp.i = 0;
 
         mqtt_parser_init(&parser);
         mqtt_parser_version(&parser, MQTT_VERSION_4);
@@ -684,6 +707,7 @@ test_mqtt() {
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
+        bp.i = 0;
 
         mqtt_parser_init(&parser);
         mqtt_parser_version(&parser, MQTT_VERSION_4);
@@ -708,6 +732,7 @@ test_mqtt() {
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
+        bp.i = 0;
 
         mqtt_parser_init(&parser);
         mqtt_parser_version(&parser, MQTT_VERSION_4);
@@ -731,6 +756,7 @@ test_mqtt() {
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
+        bp.i = 0;
 
         mqtt_parser_init(&parser);
         mqtt_parser_version(&parser, MQTT_VERSION_4);
@@ -753,6 +779,7 @@ test_mqtt() {
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
+        bp.i = 0;
 
         mqtt_parser_init(&parser);
         mqtt_parser_version(&parser, MQTT_VERSION_4);
@@ -775,6 +802,7 @@ test_mqtt() {
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
+        bp.i = 0;
 
         mqtt_parser_init(&parser);
         mqtt_parser_version(&parser, MQTT_VERSION_4);
@@ -824,6 +852,7 @@ test_mqtt() {
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
+        bp.i = 0;
 
         mqtt_parser_init(&parser);
         rc = mqtt_parse(&parser, &bp, &pkt);
@@ -867,6 +896,7 @@ test_mqtt() {
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
+        bp.i = 0;
 
         mqtt_parser_init(&parser);
         mqtt_parser_version(&parser, MQTT_VERSION_5);
@@ -903,6 +933,7 @@ test_mqtt() {
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
+        bp.i = 0;
 
         mqtt_parser_init(&parser);
         mqtt_parser_version(&parser, MQTT_VERSION_5);
@@ -941,6 +972,7 @@ test_mqtt() {
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
+        bp.i = 0;
 
         mqtt_parser_init(&parser);
         mqtt_parser_version(&parser, MQTT_VERSION_5);
@@ -971,6 +1003,7 @@ test_mqtt() {
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
+        bp.i = 0;
 
         mqtt_parser_init(&parser);
         mqtt_parser_version(&parser, MQTT_VERSION_5);
@@ -1001,6 +1034,7 @@ test_mqtt() {
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
+        bp.i = 0;
 
         mqtt_parser_init(&parser);
         mqtt_parser_version(&parser, MQTT_VERSION_5);
@@ -1033,6 +1067,7 @@ test_mqtt() {
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
+        bp.i = 0;
 
         mqtt_parser_init(&parser);
         mqtt_parser_version(&parser, MQTT_VERSION_5);
@@ -1062,6 +1097,7 @@ test_mqtt() {
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
+        bp.i = 0;
 
         mqtt_parser_init(&parser);
         mqtt_parser_version(&parser, MQTT_VERSION_5);
@@ -1086,6 +1122,7 @@ test_mqtt() {
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
+        bp.i = 0;
 
         mqtt_parser_init(&parser);
         mqtt_parser_version(&parser, MQTT_VERSION_5);
@@ -1110,6 +1147,7 @@ test_mqtt() {
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
+        bp.i = 0;
 
         mqtt_parser_init(&parser);
         mqtt_parser_version(&parser, MQTT_VERSION_5);
@@ -1134,6 +1172,7 @@ test_mqtt() {
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
+        bp.i = 0;
 
         mqtt_parser_init(&parser);
         mqtt_parser_version(&parser, MQTT_VERSION_5);
@@ -1157,6 +1196,7 @@ test_mqtt() {
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
+        bp.i = 0;
 
         mqtt_parser_init(&parser);
         mqtt_parser_version(&parser, MQTT_VERSION_5);
@@ -1179,6 +1219,7 @@ test_mqtt() {
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
+        bp.i = 0;
 
         mqtt_parser_init(&parser);
         mqtt_parser_version(&parser, MQTT_VERSION_5);
@@ -1202,6 +1243,7 @@ test_mqtt() {
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
+        bp.i = 0;
 
         mqtt_parser_init(&parser);
         mqtt_parser_version(&parser, MQTT_VERSION_5);
@@ -1227,6 +1269,7 @@ test_mqtt() {
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
+        bp.i = 0;
 
         mqtt_parser_init(&parser);
         mqtt_parser_version(&parser, MQTT_VERSION_5);
@@ -1268,6 +1311,7 @@ test_mqtt() {
 
         // mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
+        bp.i = 0;
 
         mqtt_parser_init(&parser);
         mqtt_parser_version(&parser, MQTT_VERSION_3);
@@ -1308,6 +1352,7 @@ test_mqtt() {
 
         // mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
+        bp.i = 0;
 
         mqtt_parser_init(&parser);
         mqtt_parser_version(&parser, MQTT_VERSION_3);
@@ -1348,6 +1393,7 @@ test_mqtt() {
 
         // mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
+        bp.i = 0;
 
         mqtt_parser_init(&parser);
         mqtt_parser_version(&parser, MQTT_VERSION_3);
@@ -1388,6 +1434,7 @@ test_mqtt() {
 
         // mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
+        bp.i = 0;
 
         mqtt_parser_init(&parser);
         mqtt_parser_version(&parser, MQTT_VERSION_3);
@@ -1432,6 +1479,7 @@ test_mqtt_sn() {
 
     mqtt_str_dump(&bs, 0, 0);
     mqtt_str_set(&bp, &bs);
+    bp.i = 0;
 
     mqtt_sn_parser_init(&parser);
     rc = mqtt_sn_parse(&parser, &bp, &pkt);
@@ -1456,6 +1504,7 @@ test_mqtt_sn() {
 
     mqtt_str_dump(&bs, 0, 0);
     mqtt_str_set(&bp, &bs);
+    bp.i = 0;
 
     mqtt_sn_parser_init(&parser);
     rc = mqtt_sn_parse(&parser, &bp, &pkt);
@@ -1479,6 +1528,7 @@ test_mqtt_sn() {
 
     mqtt_str_dump(&bs, 0, 0);
     mqtt_str_set(&bp, &bs);
+    bp.i = 0;
 
     mqtt_sn_parser_init(&parser);
     rc = mqtt_sn_parse(&parser, &bp, &pkt);
@@ -1504,6 +1554,7 @@ test_mqtt_sn() {
 
     mqtt_str_dump(&bs, 0, 0);
     mqtt_str_set(&bp, &bs);
+    bp.i = 0;
 
     mqtt_sn_parser_init(&parser);
     rc = mqtt_sn_parse(&parser, &bp, &pkt);
@@ -1529,6 +1580,7 @@ test_mqtt_sn() {
 
     mqtt_str_dump(&bs, 0, 0);
     mqtt_str_set(&bp, &bs);
+    bp.i = 0;
 
     mqtt_sn_parser_init(&parser);
     rc = mqtt_sn_parse(&parser, &bp, &pkt);
@@ -1552,6 +1604,7 @@ test_mqtt_sn() {
 
     mqtt_str_dump(&bs, 0, 0);
     mqtt_str_set(&bp, &bs);
+    bp.i = 0;
 
     mqtt_sn_parser_init(&parser);
     rc = mqtt_sn_parse(&parser, &bp, &pkt);
@@ -1577,6 +1630,7 @@ test_mqtt_sn() {
 
     mqtt_str_dump(&bs, 0, 0);
     mqtt_str_set(&bp, &bs);
+    bp.i = 0;
 
     mqtt_sn_parser_init(&parser);
     rc = mqtt_sn_parse(&parser, &bp, &pkt);
@@ -1604,6 +1658,7 @@ test_mqtt_sn() {
 
     mqtt_str_dump(&bs, 0, 0);
     mqtt_str_set(&bp, &bs);
+    bp.i = 0;
 
     mqtt_sn_parser_init(&parser);
     rc = mqtt_sn_parse(&parser, &bp, &pkt);
@@ -1625,6 +1680,7 @@ test_mqtt_sn() {
 
     mqtt_str_dump(&bs, 0, 0);
     mqtt_str_set(&bp, &bs);
+    bp.i = 0;
 
     mqtt_sn_parser_init(&parser);
     rc = mqtt_sn_parse(&parser, &bp, &pkt);
@@ -1643,6 +1699,7 @@ test_mqtt_sn() {
 
     mqtt_str_dump(&bs, 0, 0);
     mqtt_str_set(&bp, &bs);
+    bp.i = 0;
 
     mqtt_sn_parser_init(&parser);
     rc = mqtt_sn_parse(&parser, &bp, &pkt);
@@ -1661,6 +1718,7 @@ test_mqtt_sn() {
 
     mqtt_str_dump(&bs, 0, 0);
     mqtt_str_set(&bp, &bs);
+    bp.i = 0;
 
     mqtt_sn_parser_init(&parser);
     rc = mqtt_sn_parse(&parser, &bp, &pkt);
@@ -1679,6 +1737,7 @@ test_mqtt_sn() {
 
     mqtt_str_dump(&bs, 0, 0);
     mqtt_str_set(&bp, &bs);
+    bp.i = 0;
 
     mqtt_sn_parser_init(&parser);
     rc = mqtt_sn_parse(&parser, &bp, &pkt);
@@ -1697,6 +1756,7 @@ test_mqtt_sn() {
 
     mqtt_str_dump(&bs, 0, 0);
     mqtt_str_set(&bp, &bs);
+    bp.i = 0;
 
     mqtt_sn_parser_init(&parser);
     rc = mqtt_sn_parse(&parser, &bp, &pkt);
@@ -1716,6 +1776,7 @@ test_mqtt_sn() {
 
     mqtt_str_dump(&bs, 0, 0);
     mqtt_str_set(&bp, &bs);
+    bp.i = 0;
 
     mqtt_sn_parser_init(&parser);
     rc = mqtt_sn_parse(&parser, &bp, &pkt);
@@ -1748,6 +1809,7 @@ test_mqtt_sn() {
 
     // mqtt_str_dump(&bs, 0, 0);
     mqtt_str_set(&bp, &bs);
+    bp.i = 0;
 
     mqtt_sn_parser_init(&parser);
     rc = mqtt_sn_parse(&parser, &bp, &pkt);

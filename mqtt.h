@@ -1784,7 +1784,7 @@ mqtt_vbi_length(size_t length) {
 
 static inline int
 mqtt_str_read_utf(mqtt_str_t *b, mqtt_str_t *r) {
-    if (!b || !r)
+    if (!b || !r || !b->s)
         return -1;
 
     if (b->i + 2 > b->n)
@@ -1805,7 +1805,7 @@ mqtt_str_read_utf(mqtt_str_t *b, mqtt_str_t *r) {
 
 static inline int
 mqtt_str_read_u8(mqtt_str_t *b, uint8_t *c8) {
-    if (!b || !c8)
+    if (!b || !c8 || !b->s)
         return -1;
 
     if (b->i + 1 > b->n)
@@ -1818,7 +1818,7 @@ mqtt_str_read_u8(mqtt_str_t *b, uint8_t *c8) {
 
 static inline int
 mqtt_str_read_u16(mqtt_str_t *b, uint16_t *u16) {
-    if (!b || !u16)
+    if (!b || !u16 || !b->s)
         return -1;
 
     if (b->i + 2 > b->n)
@@ -1832,7 +1832,7 @@ mqtt_str_read_u16(mqtt_str_t *b, uint16_t *u16) {
 
 static inline int
 mqtt_str_read_u32(mqtt_str_t *b, uint32_t *u32) {
-    if (!b || !u32)
+    if (!b || !u32 || !b->s)
         return -1;
 
     if (b->i + 4 > b->n)
@@ -1846,7 +1846,7 @@ mqtt_str_read_u32(mqtt_str_t *b, uint32_t *u32) {
 
 static inline int
 mqtt_str_read_vbi(mqtt_str_t *b, uint32_t *vbi) {
-    if (!b || !vbi)
+    if (!b || !vbi || !b->s)
         return -1;
 
     int multiplier = 1;
@@ -1866,7 +1866,7 @@ mqtt_str_read_vbi(mqtt_str_t *b, uint32_t *vbi) {
 
 static inline int
 mqtt_str_read_all(mqtt_str_t *b, mqtt_str_t *r) {
-    if (!b || !r)
+    if (!b || !r || !b->s)
         return -1;
 
     r->s = b->s + b->i;
@@ -1877,7 +1877,7 @@ mqtt_str_read_all(mqtt_str_t *b, mqtt_str_t *r) {
 
 static inline int
 mqtt_str_write_utf(mqtt_str_t *b, const mqtt_str_t *r) {
-    if (!b || !r)
+    if (!b || !r || !b->s)
         return -1;
 
     if (r->n > 0xFFFF)
@@ -1898,8 +1898,9 @@ mqtt_str_write_utf(mqtt_str_t *b, const mqtt_str_t *r) {
 
 static inline int
 mqtt_str_write_u8(mqtt_str_t *b, uint8_t r) {
-    if (!b)
+    if (!b || !b->s)
         return -1;
+
     if (b->i + 1 > b->n)
         return -1;
 
@@ -1910,7 +1911,7 @@ mqtt_str_write_u8(mqtt_str_t *b, uint8_t r) {
 
 static inline int
 mqtt_str_write_u16(mqtt_str_t *b, uint16_t r) {
-    if (!b)
+    if (!b || !b->s)
         return -1;
 
     if (b->i + 2 > b->n)
@@ -1924,7 +1925,7 @@ mqtt_str_write_u16(mqtt_str_t *b, uint16_t r) {
 
 static inline int
 mqtt_str_write_u32(mqtt_str_t *b, uint32_t r) {
-    if (!b)
+    if (!b || !b->s)
         return -1;
 
     if (b->i + 4 > b->n)
@@ -1940,7 +1941,7 @@ mqtt_str_write_u32(mqtt_str_t *b, uint32_t r) {
 
 static inline int
 mqtt_str_write_vbi(mqtt_str_t *b, uint32_t vbi) {
-    if (!b)
+    if (!b || !b->s)
         return -1;
 
     if (vbi >= (1U << 28))
@@ -2919,6 +2920,8 @@ __process(mqtt_parser_t *parser) {
     pkt->ver = parser->version;
     type = (mqtt_packet_type_t)pkt->f.bits.type;
     mqtt_str_set(&b, &pkt->b);
+    b.i = 0;
+
     switch (type) {
     case MQTT_CONNECT:
         rc = __parse_connect(&b, pkt);
@@ -2980,12 +2983,18 @@ __process(mqtt_parser_t *parser) {
 
 void
 mqtt_parser_init(mqtt_parser_t *parser) {
+    if (!parser)
+        return;
+
     memset(parser, 0, sizeof *parser);
     parser->state = MQTT_ST_FIXED;
 }
 
 void
 mqtt_parser_version(mqtt_parser_t *parser, mqtt_version_t version) {
+    if (!parser)
+        return;
+
     parser->version = version;
 }
 
@@ -2996,15 +3005,12 @@ mqtt_parser_unit(mqtt_parser_t *parser) {
 
 int
 mqtt_parse(mqtt_parser_t *parser, mqtt_str_t *b, mqtt_packet_t *pkt) {
-    char *c, *e;
-    size_t offset;
-    int rc;
+    if (!parser || !b || !b->s)
+        return -1;
 
-    e = b->s + b->n;
-    c = b->s;
-    rc = 0;
-    while (c < e) {
-        uint8_t k = (uint8_t)(*c);
+    int rc = 0;
+    while (b->i < b->n) {
+        uint8_t k = *(uint8_t *)(b->s + b->i);
         switch (parser->state) {
         case MQTT_ST_FIXED:
             memset(&parser->pkt, 0, sizeof parser->pkt);
@@ -3016,7 +3022,7 @@ mqtt_parse(mqtt_parser_t *parser, mqtt_str_t *b, mqtt_packet_t *pkt) {
             parser->state = MQTT_ST_LENGTH;
             parser->multiplier = 1;
             parser->require = 0;
-            c++;
+            b->i++;
             break;
         case MQTT_ST_LENGTH:
             parser->require += (k & 0x7F) * parser->multiplier;
@@ -3037,37 +3043,34 @@ mqtt_parse(mqtt_parser_t *parser, mqtt_str_t *b, mqtt_packet_t *pkt) {
                         rc = -1;
                         goto e;
                     }
+                    parser->pkt.b.i = 0;
                     parser->pkt.b.n = parser->require;
                 } else {
                     parser->state = MQTT_ST_FIXED;
                     rc = __process(parser);
-                    c++;
-                    b->n = e - c;
-                    b->s = c;
+                    b->i++;
                     goto e;
                 }
             }
-            c++;
+            b->i++;
             break;
         case MQTT_ST_REMAIN:
             if (!parser->pkt.b.s) {
                 rc = -1;
                 goto e;
             }
-            
-            offset = parser->pkt.b.n - parser->require;
-            if ((size_t)(e - c) >= parser->require) {
-                memcpy(parser->pkt.b.s + offset, c, parser->require);
-                c += parser->require;
+
+            if ((size_t)(b->n - b->i) >= parser->require) {
+                memcpy(parser->pkt.b.s + parser->pkt.b.i, b->s + b->i, parser->require);
+                parser->pkt.b.i += parser->require;
                 parser->state = MQTT_ST_FIXED;
                 rc = __process(parser);
-                b->n = e - c;
-                b->s = c;
+                b->i += parser->require;
                 goto e;
             } else {
-                memcpy(parser->pkt.b.s + offset, c, e - c);
-                parser->require -= e - c;
-                c = e;
+                memcpy(parser->pkt.b.s + parser->pkt.b.i, b->s + b->i, b->n - b->i);
+                parser->require -= b->n - b->i;
+                b->i = b->n;
             }
             break;
         }
@@ -3075,14 +3078,15 @@ mqtt_parse(mqtt_parser_t *parser, mqtt_str_t *b, mqtt_packet_t *pkt) {
 
 e:
     if (rc == 1) {
-        *pkt = parser->pkt;
-        parser->pkt.b.s = NULL;
+        if (pkt)
+            *pkt = parser->pkt;
+        parser->pkt.b.s = 0;
         parser->pkt.b.i = 0;
         parser->pkt.b.n = 0;
     } else if (rc == -1) {
         if (parser->pkt.b.s) {
             free(parser->pkt.b.s);
-            parser->pkt.b.s = NULL;
+            parser->pkt.b.s = 0;
         }
         parser->pkt.b.i = 0;
         parser->pkt.b.n = 0;
@@ -4205,6 +4209,8 @@ __sn_process(mqtt_sn_parser_t *parser) {
     type = pkt->type;
 
     mqtt_str_set(&b, &pkt->b);
+    b.i = 0;
+
     switch (type) {
     case MQTT_SN_ADVERTISE:
         rc = __sn_parse_advertise(pkt, &b);
@@ -4304,6 +4310,9 @@ __sn_process(mqtt_sn_parser_t *parser) {
 
 void
 mqtt_sn_parser_init(mqtt_sn_parser_t *parser) {
+    if (!parser)
+        return;
+        
     memset(parser, 0, sizeof *parser);
     parser->state = MQTT_SN_ST_LENGTH;
 }
@@ -4315,15 +4324,12 @@ mqtt_sn_parser_unit(mqtt_sn_parser_t *parser) {
 
 int
 mqtt_sn_parse(mqtt_sn_parser_t *parser, mqtt_str_t *b, mqtt_sn_packet_t *pkt) {
-    char *c, *e;
-    size_t offset;
-    int rc;
+    if (!parser || !b || !b->s)
+        return -1;
 
-    e = b->s + b->n;
-    c = b->s;
-    rc = 0;
-    while (c < e) {
-        uint8_t k = (uint8_t)(*c);
+    int rc = 0;
+    while (b->i < b->n) {
+        uint8_t k = *(uint8_t *)(b->s + b->i);
         switch (parser->state) {
         case MQTT_SN_ST_LENGTH:
             memset(&parser->pkt, 0, sizeof parser->pkt);
@@ -4352,7 +4358,7 @@ mqtt_sn_parse(mqtt_sn_parser_t *parser, mqtt_str_t *b, mqtt_sn_packet_t *pkt) {
                 }
                 parser->state = MQTT_SN_ST_TYPE;
             }
-            c++;
+            b->i++;
             break;
         case MQTT_SN_ST_TYPE:
             parser->pkt.type = (mqtt_sn_packet_type_t)k;
@@ -4364,9 +4370,7 @@ mqtt_sn_parse(mqtt_sn_parser_t *parser, mqtt_str_t *b, mqtt_sn_packet_t *pkt) {
             if (parser->require == 0) {
                 parser->state = MQTT_SN_ST_LENGTH;
                 rc = __sn_process(parser);
-                c++;
-                b->n = e - c;
-                b->s = c;
+                b->i++;
                 goto e;
             }
             parser->pkt.b.s = (char *)malloc(parser->require);
@@ -4375,23 +4379,22 @@ mqtt_sn_parse(mqtt_sn_parser_t *parser, mqtt_str_t *b, mqtt_sn_packet_t *pkt) {
                 goto e;
             }
             parser->pkt.b.n = parser->require;
+            parser->pkt.b.i = 0;
             parser->state = MQTT_SN_ST_REMAIN;
-            c++;
+            b->i++;
             break;
         case MQTT_SN_ST_REMAIN:
-            offset = parser->pkt.b.n - parser->require;
-            if ((size_t)(e - c) >= parser->require) {
-                memcpy(parser->pkt.b.s + offset, c, parser->require);
-                c += parser->require;
+            if ((size_t)(b->n - b->i) >= parser->require) {
+                memcpy(parser->pkt.b.s + parser->pkt.b.i, b->s + b->i, parser->require);
+                parser->pkt.b.i += parser->require;
                 parser->state = MQTT_SN_ST_LENGTH;
                 rc = __sn_process(parser);
-                b->n = e - c;
-                b->s = c;
+                b->i += parser->require;
                 goto e;
             } else {
-                memcpy(parser->pkt.b.s + offset, c, e - c);
-                parser->require -= e - c;
-                c = e;
+                memcpy(parser->pkt.b.s + parser->pkt.b.i, b->s + b->i, b->n - b->i);
+                parser->require -= b->n - b->i;
+                b->i = b->n;
             }
             break;
         }
@@ -4399,12 +4402,17 @@ mqtt_sn_parse(mqtt_sn_parser_t *parser, mqtt_str_t *b, mqtt_sn_packet_t *pkt) {
 
 e:
     if (rc == 1) {
-        *pkt = parser->pkt;
+        if (pkt)
+            *pkt = parser->pkt;
+        parser->pkt.b.s = 0;
+        parser->pkt.b.i = 0;
+        parser->pkt.b.n = 0;
     } else if (rc == -1) {
         if (parser->pkt.b.s) {
             free(parser->pkt.b.s);
-            parser->pkt.b.s = NULL;
+            parser->pkt.b.s = 0;
         }
+        parser->pkt.b.i = 0;
         parser->pkt.b.n = 0;
     }
     return rc;
