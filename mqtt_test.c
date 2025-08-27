@@ -1856,9 +1856,7 @@ test_mqtt_random() {
     mqtt_str_t bp = MQTT_STR_INITIALIZER;
     mqtt_packet_t pkt;
     mqtt_parser_t parser;
-    int rc;
 
-    srand(time(NULL));
     size_t data_len = rand() % 1000 + 1;
 
     char *random_data = malloc(data_len);
@@ -1878,11 +1876,10 @@ test_mqtt_random() {
 
     mqtt_parser_init(&parser);
 
-    rc = mqtt_parse(&parser, &bp, &pkt);
+    mqtt_parse(&parser, &bp, &pkt);
 
-    printf("Random data test:\n");
-    printf("  Data length: %zu\n", data_len);
-    printf("  Parse result: %d\n", rc);
+    // printf("  Data length: %zu\n", data_len);
+    // printf("  Parse result: %d\n", rc);
 
     mqtt_packet_unit(&pkt);
     mqtt_parser_unit(&parser);
@@ -1894,9 +1891,7 @@ test_mqtt_sn_random() {
     mqtt_str_t bp = MQTT_STR_INITIALIZER;
     mqtt_sn_packet_t pkt;
     mqtt_sn_parser_t parser;
-    int rc;
 
-    srand(time(NULL));
     size_t data_len = rand() % 1000 + 1;
 
     char *random_data = malloc(data_len);
@@ -1916,11 +1911,10 @@ test_mqtt_sn_random() {
 
     mqtt_sn_parser_init(&parser);
 
-    rc = mqtt_sn_parse(&parser, &bp, &pkt);
+    mqtt_sn_parse(&parser, &bp, &pkt);
 
-    printf("Random data test:\n");
-    printf("  Data length: %zu\n", data_len);
-    printf("  Parse result: %d\n", rc);
+    // printf("  Data length: %zu\n", data_len);
+    // printf("  Parse result: %d\n", rc);
 
     mqtt_sn_packet_unit(&pkt);
     mqtt_sn_parser_unit(&parser);
@@ -1935,11 +1929,13 @@ main(int argc, char *argv[]) {
     test_mqtt();
     test_mqtt_sn();
 
-    for (int i = 0; i < 100; i++) {
+    srand(time(NULL));
+
+    for (int i = 0; i < 10000; i++) {
         test_mqtt_random();
     }
 
-    for (int i = 0; i < 100; i++) {
+    for (int i = 0; i < 10000; i++) {
         test_mqtt_sn_random();
     }
 

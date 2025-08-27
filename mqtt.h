@@ -3018,6 +3018,9 @@ mqtt_parser_version(mqtt_parser_t *parser, mqtt_version_t version) {
 
 void
 mqtt_parser_unit(mqtt_parser_t *parser) {
+    if (!parser)
+        return;
+
     mqtt_packet_unit(&parser->pkt);
 }
 
@@ -3079,15 +3082,20 @@ mqtt_parse(mqtt_parser_t *parser, mqtt_str_t *b, mqtt_packet_t *pkt) {
             }
 
             if ((size_t)(b->n - b->i) >= parser->require) {
-                memcpy(parser->pkt.b.s + parser->pkt.b.i, b->s + b->i, parser->require);
-                parser->pkt.b.i += parser->require;
+                if (parser->require > 0) {
+                    memcpy(parser->pkt.b.s + parser->pkt.b.i, b->s + b->i, parser->require);
+                    parser->pkt.b.i += parser->require;
+                }
                 parser->state = MQTT_ST_FIXED;
                 rc = __process(parser);
                 b->i += parser->require;
                 goto e;
             } else {
-                memcpy(parser->pkt.b.s + parser->pkt.b.i, b->s + b->i, b->n - b->i);
-                parser->require -= b->n - b->i;
+                if (b->i < b->n) {
+                    memcpy(parser->pkt.b.s + parser->pkt.b.i, b->s + b->i, b->n - b->i);
+                    parser->pkt.b.i += b->n - b->i;
+                    parser->require -= b->n - b->i;
+                }
                 b->i = b->n;
             }
             break;
@@ -3103,8 +3111,8 @@ e:
     } else if (rc == -1) {
         if (parser->pkt.b.s) {
             free(parser->pkt.b.s);
+            parser->pkt.b.s = 0;
         }
-        memset(&parser->pkt, 0, sizeof parser->pkt);
     }
     return rc;
 }
@@ -4339,7 +4347,10 @@ mqtt_sn_parser_init(mqtt_sn_parser_t *parser) {
 
 void
 mqtt_sn_parser_unit(mqtt_sn_parser_t *parser) {
-    (void)parser;
+    if (!parser)
+        return;
+
+    mqtt_sn_packet_unit(&parser->pkt);
 }
 
 int
@@ -4353,7 +4364,21 @@ mqtt_sn_parse(mqtt_sn_parser_t *parser, mqtt_str_t *b, mqtt_sn_packet_t *pkt) {
         switch (parser->state) {
         case MQTT_SN_ST_LENGTH:
             memset(&parser->pkt, 0, sizeof parser->pkt);
-            if (parser->multiplier == 1) {
+            if (parser->multiplier == 0) {
+                if (k == 0x01) {
+                    parser->multiplier = 1;
+                    b->i++;
+                    continue;
+                } else {
+                    parser->require = k;
+                    if (parser->require < 2) {
+                        rc = -1;
+                        goto e;
+                    }
+                    parser->require -= 1;
+                    parser->state = MQTT_SN_ST_TYPE;
+                }
+            } else if (parser->multiplier == 1) {
                 parser->require = (uint16_t)k << 8;
                 parser->multiplier = 2;
             } else if (parser->multiplier == 2) {
@@ -4372,15 +4397,7 @@ mqtt_sn_parse(mqtt_sn_parser_t *parser, mqtt_str_t *b, mqtt_sn_packet_t *pkt) {
                     goto e;
                 }
                 parser->state = MQTT_SN_ST_TYPE;
-            } else if (k == 0x01) {
-                parser->multiplier = 1;
-            } else {
-                parser->require = k - 1;
-                if (parser->require < 1) {
-                    rc = -1;
-                    goto e;
-                }
-                parser->state = MQTT_SN_ST_TYPE;
+                parser->multiplier = 0;
             }
             b->i++;
             break;
@@ -4393,6 +4410,7 @@ mqtt_sn_parse(mqtt_sn_parser_t *parser, mqtt_str_t *b, mqtt_sn_packet_t *pkt) {
             parser->require -= 1;
             if (parser->require == 0) {
                 parser->state = MQTT_SN_ST_LENGTH;
+                parser->multiplier = 0;
                 rc = __sn_process(parser);
                 b->i++;
                 goto e;
@@ -4412,11 +4430,13 @@ mqtt_sn_parse(mqtt_sn_parser_t *parser, mqtt_str_t *b, mqtt_sn_packet_t *pkt) {
                 memcpy(parser->pkt.b.s + parser->pkt.b.i, b->s + b->i, parser->require);
                 parser->pkt.b.i += parser->require;
                 parser->state = MQTT_SN_ST_LENGTH;
+                parser->multiplier = 0;
                 rc = __sn_process(parser);
                 b->i += parser->require;
                 goto e;
             } else {
                 memcpy(parser->pkt.b.s + parser->pkt.b.i, b->s + b->i, b->n - b->i);
+                parser->pkt.b.i += b->n - b->i;
                 parser->require -= b->n - b->i;
                 b->i = b->n;
             }
@@ -4432,8 +4452,8 @@ e:
     } else if (rc == -1) {
         if (parser->pkt.b.s) {
             free(parser->pkt.b.s);
+            parser->pkt.b.s = 0;
         }
-        memset(&parser->pkt, 0, sizeof parser->pkt);
     }
     return rc;
 }
