@@ -58,8 +58,35 @@ _publish(mqtt_cli_t *m, void *ud, const mqtt_packet_t *pkt) {
            MQTT_STR_PRINT(pkt->v.publish.topic_name), MQTT_STR_PRINT(pkt->p.publish.message));
 }
 
+#define MQTT_MEMPOOL_IMPL
+#include "mqtt_mempool.h"
+
+static mqtt_mempool_t *g_mempool = NULL;
+
+static void *
+mqtt_mempool_malloc_adapter(size_t size) {
+    if (g_mempool) {
+        return mqtt_mempool_alloc(g_mempool, size);
+    }
+    return malloc(size);
+}
+
+static void
+mqtt_mempool_free_adapter(void *ptr) {
+    if (g_mempool) {
+        mqtt_mempool_free(g_mempool, ptr);
+    } else {
+        free(ptr);
+    }
+}
+
 int
 main(int argc, char *argv[]) {
+
+    g_mempool = mqtt_mempool_create(0);
+
+    mqtt_set_allocator(mqtt_mempool_malloc_adapter, mqtt_mempool_free_adapter);
+
     void *net;
     mqtt_cli_t *m;
     mqtt_cli_conf_t config = {
@@ -119,5 +146,22 @@ main(int argc, char *argv[]) {
     mqtt_cli_destroy(m);
 
     linux_tcp_close(net);
+
+    size_t allocated_size = 0, used_size = 0, total_allocations = 0, total_frees = 0;
+    double hit_rate = 0;
+    mqtt_mempool_stats(g_mempool, &allocated_size, &used_size, &total_allocations, &total_frees, &hit_rate);
+
+    printf("Memory pool stats:\n");
+    printf("  Allocated size: %zu bytes\n", allocated_size);
+    printf("  Used size: %zu bytes\n", used_size);
+    printf("  Total allocations: %zu\n", total_allocations);
+    printf("  Total frees: %zu\n", total_frees);
+    printf("  Hit rate: %.2f\n", hit_rate);
+
+    mqtt_mempool_destroy(g_mempool);
+    g_mempool = NULL;
+
+    printf("Memory pool destroyed\n");
+
     return 0;
 }

@@ -31,8 +31,6 @@
 
 #include "mqtt.h"
 
-#include <threads.h>
-
 typedef struct mqtt_cli_s mqtt_cli_t;
 
 typedef void (*mqtt_cli_callback_pt)(mqtt_cli_t *m, void *ud, const mqtt_packet_t *pkt);
@@ -89,6 +87,39 @@ int mqtt_cli_elapsed(mqtt_cli_t *m, uint64_t time);
 #define MQTT_IMPL
 #include "mqtt.h"
 
+#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L && !defined(__STDC_NO_THREADS__)
+#define MQTT_CLI_C11_THREADS 1
+#include <threads.h>
+#else
+#define MQTT_CLI_C11_THREADS 0
+#ifdef _WIN32
+#include <windows.h>
+typedef CRITICAL_SECTION mqtt_cli_mutex_t;
+#else
+#include <pthread.h>
+typedef pthread_mutex_t mqtt_cli_mutex_t;
+#endif
+#endif
+
+#if MQTT_CLI_C11_THREADS
+#define MQTT_CLI_LOCK_INIT(m) mtx_init(&(m), mtx_plain)
+#define MQTT_CLI_LOCK_DESTROY(m) mtx_destroy(&(m))
+#define MQTT_CLI_LOCK(m) mtx_lock(&(m))
+#define MQTT_CLI_UNLOCK(m) mtx_unlock(&(m))
+#else
+#ifdef _WIN32
+#define MQTT_CLI_LOCK_INIT(m) InitializeCriticalSection(&(m))
+#define MQTT_CLI_LOCK_DESTROY(m) DeleteCriticalSection(&(m))
+#define MQTT_CLI_LOCK(m) EnterCriticalSection(&(m))
+#define MQTT_CLI_UNLOCK(m) LeaveCriticalSection(&(m))
+#else
+#define MQTT_CLI_LOCK_INIT(m) pthread_mutex_init(&(m), NULL)
+#define MQTT_CLI_LOCK_DESTROY(m) pthread_mutex_destroy(&(m))
+#define MQTT_CLI_LOCK(m) pthread_mutex_lock(&(m))
+#define MQTT_CLI_UNLOCK(m) pthread_mutex_unlock(&(m))
+#endif
+#endif
+
 typedef struct mqtt_cli_packet_s {
     uint64_t t_send;
     int ttl;
@@ -126,7 +157,11 @@ struct mqtt_cli_s {
     uint16_t packet_id;
     mqtt_parser_t parser;
     mqtt_cli_packet_t *padding;
+#if MQTT_CLI_C11_THREADS
     mtx_t padding_lock;
+#else
+    mqtt_cli_mutex_t padding_lock;
+#endif
 
     struct {
         mqtt_cli_callback_pt connack;
@@ -154,7 +189,7 @@ static void
 _clear_padding(mqtt_cli_t *m) {
     mqtt_cli_packet_t *mp;
 
-    mtx_lock(&m->padding_lock);
+    MQTT_CLI_LOCK(m->padding_lock);
     mp = m->padding;
     while (mp) {
         mqtt_cli_packet_t *next;
@@ -164,7 +199,7 @@ _clear_padding(mqtt_cli_t *m) {
         MQTT_FREE(mp);
         mp = next;
     }
-    mtx_unlock(&m->padding_lock);
+    MQTT_CLI_UNLOCK(m->padding_lock);
     m->padding = 0;
 }
 
@@ -175,7 +210,7 @@ _check_padding(mqtt_cli_t *m) {
 
     rc = 0;
 
-    mtx_lock(&m->padding_lock);
+    MQTT_CLI_LOCK(m->padding_lock);
     mp = m->padding;
     while (mp) {
         if (mp->ttl > 0 && m->t.now - mp->t_send >= MQTT_CLI_PACKET_TIMEOUT * 1000) {
@@ -191,7 +226,7 @@ _check_padding(mqtt_cli_t *m) {
         }
         mp = mp->next;
     }
-    mtx_unlock(&m->padding_lock);
+    MQTT_CLI_UNLOCK(m->padding_lock);
 
     return rc;
 }
@@ -216,7 +251,7 @@ _erase_padding(mqtt_cli_t *m, mqtt_packet_type_t type, uint16_t packet_id) {
     int ret;
 
     ret = -1;
-    mtx_lock(&m->padding_lock);
+    MQTT_CLI_LOCK(m->padding_lock);
     pmp = &m->padding;
     while (*pmp) {
         mp = *pmp;
@@ -229,7 +264,7 @@ _erase_padding(mqtt_cli_t *m, mqtt_packet_type_t type, uint16_t packet_id) {
         }
         pmp = &mp->next;
     }
-    mtx_unlock(&m->padding_lock);
+    MQTT_CLI_UNLOCK(m->padding_lock);
 
     return ret;
 }
@@ -266,7 +301,7 @@ _append_padding(mqtt_cli_t *m, mqtt_packet_t *pkt) {
             break;
         }
 
-        mtx_lock(&m->padding_lock);
+        MQTT_CLI_LOCK(m->padding_lock);
         if (!m->padding)
             m->padding = mp;
         else {
@@ -278,7 +313,7 @@ _append_padding(mqtt_cli_t *m, mqtt_packet_t *pkt) {
             }
             p->next = mp;
         }
-        mtx_unlock(&m->padding_lock);
+        MQTT_CLI_UNLOCK(m->padding_lock);
     } else {
         mqtt_str_free(&b);
     }
@@ -400,6 +435,11 @@ mqtt_cli_create(mqtt_cli_conf_t *config) {
     }
     memset(m, 0, sizeof *m);
 
+    if (MQTT_CLI_LOCK_INIT(m->padding_lock) != 0) {
+        MQTT_FREE(m);
+        return 0;
+    }
+
     mqtt_str_dup(&m->client_id, config->client_id);
     m->version = config->version;
     m->clean_session = config->clean_session;
@@ -439,6 +479,7 @@ mqtt_cli_destroy(mqtt_cli_t *m) {
     mqtt_str_free(&m->auth.password);
     mqtt_str_free(&m->lwt.topic);
     mqtt_str_free(&m->lwt.message);
+    MQTT_CLI_LOCK_DESTROY(m->padding_lock);
     MQTT_FREE(m);
 }
 
@@ -553,7 +594,7 @@ mqtt_cli_outgoing(mqtt_cli_t *m, mqtt_str_t *outgoing) {
 
     mqtt_str_init(outgoing, 0, 0);
 
-    mtx_lock(&m->padding_lock);
+    MQTT_CLI_LOCK(m->padding_lock);
     mp = m->padding;
     while (mp) {
         if (mp->wait_ack == 0) {
@@ -567,7 +608,7 @@ mqtt_cli_outgoing(mqtt_cli_t *m, mqtt_str_t *outgoing) {
 
         outgoing->s = (char *)MQTT_MALLOC(outgoing->n);
         if (!outgoing->s) {
-            mtx_unlock(&m->padding_lock);
+            MQTT_CLI_UNLOCK(m->padding_lock);
             return -1;
         }
         outgoing->i = 0;
@@ -590,7 +631,7 @@ mqtt_cli_outgoing(mqtt_cli_t *m, mqtt_str_t *outgoing) {
         }
         m->t.send = m->t.now;
     }
-    mtx_unlock(&m->padding_lock);
+    MQTT_CLI_UNLOCK(m->padding_lock);
 
     return 0;
 }
