@@ -161,10 +161,11 @@ _clear_padding(mqtt_cli_t *m) {
 
         next = mp->next;
         mqtt_str_free(&mp->b);
-        free(mp);
+        MQTT_FREE(mp);
         mp = next;
     }
     mtx_unlock(&m->padding_lock);
+    m->padding = 0;
 }
 
 static int
@@ -222,7 +223,7 @@ _erase_padding(mqtt_cli_t *m, mqtt_packet_type_t type, uint16_t packet_id) {
         if (mp->type == type && mp->packet_id == packet_id) {
             *pmp = mp->next;
             mqtt_str_free(&mp->b);
-            free(mp);
+            MQTT_FREE(mp);
             ret = 0;
             break;
         }
@@ -242,7 +243,11 @@ _append_padding(mqtt_cli_t *m, mqtt_packet_t *pkt) {
     if (!rc) {
         mqtt_cli_packet_t *mp;
 
-        mp = (mqtt_cli_packet_t *)malloc(sizeof *mp);
+        mp = (mqtt_cli_packet_t *)MQTT_MALLOC(sizeof *mp);
+        if (!mp) {
+            mqtt_str_free(&b);
+            return -1;
+        }
         memset(mp, 0, sizeof *mp);
         mp->type = (mqtt_packet_type_t)pkt->f.bits.type;
         mqtt_str_set(&mp->b, &b);
@@ -389,7 +394,10 @@ mqtt_cli_t *
 mqtt_cli_create(mqtt_cli_conf_t *config) {
     mqtt_cli_t *m;
 
-    m = (mqtt_cli_t *)malloc(sizeof *m);
+    m = (mqtt_cli_t *)MQTT_MALLOC(sizeof *m);
+    if (!m) {
+        return 0;
+    }
     memset(m, 0, sizeof *m);
 
     mqtt_str_dup(&m->client_id, config->client_id);
@@ -431,7 +439,7 @@ mqtt_cli_destroy(mqtt_cli_t *m) {
     mqtt_str_free(&m->auth.password);
     mqtt_str_free(&m->lwt.topic);
     mqtt_str_free(&m->lwt.message);
-    free(m);
+    MQTT_FREE(m);
 }
 
 int
@@ -488,7 +496,8 @@ mqtt_cli_subscribe(mqtt_cli_t *m, int count, const char *topic[], mqtt_qos_t qos
 
     mqtt_packet_init(&pkt, m->version, MQTT_SUBSCRIBE);
     pkt.v.subscribe.packet_id = _generate_packet_id(m);
-    mqtt_subscribe_generate(&pkt, count);
+    if (mqtt_subscribe_generate(&pkt, count))
+        return -1;
     for (i = 0; i < count; i++) {
         mqtt_str_from(&pkt.p.subscribe.topic_filters[i], topic[i]);
         pkt.p.subscribe.options[i].bits.qos = qos[i];
@@ -507,7 +516,8 @@ mqtt_cli_unsubscribe(mqtt_cli_t *m, int count, const char *topic[], uint16_t *pa
 
     mqtt_packet_init(&pkt, m->version, MQTT_UNSUBSCRIBE);
     pkt.v.unsubscribe.packet_id = _generate_packet_id(m);
-    mqtt_unsubscribe_generate(&pkt, count);
+    if (mqtt_unsubscribe_generate(&pkt, count))
+        return -1;
     for (i = 0; i < count; i++) {
         mqtt_str_from(&pkt.p.unsubscribe.topic_filters[i], topic[i]);
     }
@@ -555,8 +565,12 @@ mqtt_cli_outgoing(mqtt_cli_t *m, mqtt_str_t *outgoing) {
     if (outgoing->n > 0) {
         mqtt_cli_packet_t **pmp;
 
-        outgoing->s = (char *)malloc(outgoing->n);
-        outgoing->n = 0;
+        outgoing->s = (char *)MQTT_MALLOC(outgoing->n);
+        if (!outgoing->s) {
+            mtx_unlock(&m->padding_lock);
+            return -1;
+        }
+        outgoing->i = 0;
 
         pmp = &m->padding;
         while (*pmp) {
@@ -566,7 +580,7 @@ mqtt_cli_outgoing(mqtt_cli_t *m, mqtt_str_t *outgoing) {
                 if (mp->ttl == 0) {
                     *pmp = mp->next;
                     mqtt_str_free(&mp->b);
-                    free(mp);
+                    MQTT_FREE(mp);
                     continue;
                 }
                 mp->wait_ack = 1;
@@ -673,7 +687,11 @@ linux_tcp_connect(const char *host, int port) {
         return 0;
     }
 
-    net = (linux_tcp_network_t *)malloc(sizeof *net);
+    net = (linux_tcp_network_t *)MQTT_MALLOC(sizeof *net);
+    if (!net) {
+        close(fd);
+        return 0;
+    }
     memset(net, 0, sizeof *net);
 
     net->fd = fd;
@@ -750,7 +768,7 @@ linux_tcp_close(void *net) {
 
     fd = ((linux_tcp_network_t *)net)->fd;
     close(fd);
-    free(net);
+    MQTT_FREE(net);
 }
 
 uint64_t

@@ -182,7 +182,7 @@ _clear_padding(mqtt_sn_cli_t *m) {
 
         next = mp->next;
         mqtt_str_free(&mp->b);
-        free(mp);
+        MQTT_FREE(mp);
         mp = next;
     }
 }
@@ -237,7 +237,7 @@ _erase_padding(mqtt_sn_cli_t *m, mqtt_sn_packet_type_t type, uint16_t packet_id)
         if (mp->type == type && mp->packet_id == packet_id) {
             *pmp = mp->next;
             mqtt_str_free(&mp->b);
-            free(mp);
+            MQTT_FREE(mp);
             return 0;
         }
         pmp = &mp->next;
@@ -252,7 +252,7 @@ _append_padding(mqtt_sn_cli_t *m, mqtt_sn_packet_t *pkt) {
 
     mqtt_sn_serialize(pkt, &b);
 
-    mp = (mqtt_sn_cli_packet_t *)malloc(sizeof *mp);
+    mp = (mqtt_sn_cli_packet_t *)MQTT_MALLOC(sizeof *mp);
     memset(mp, 0, sizeof *mp);
     mp->type = pkt->type;
     mqtt_str_set(&mp->b, &b);
@@ -324,8 +324,9 @@ static void
 _regist_topic_id(mqtt_sn_cli_t *m, const char *topic, uint16_t id, uint16_t packet_id) {
     mqtt_sn_cli_topic_t *t;
 
-    t = (mqtt_sn_cli_topic_t *)malloc(sizeof *t);
-    t->topic = strdup(topic);
+    t = (mqtt_sn_cli_topic_t *)MQTT_MALLOC(sizeof *t);
+    t->topic = MQTT_MALLOC(strlen(topic));
+    memcpy(t->topic, topic, strlen(topic));
     t->packet_id = packet_id;
     t->next = 0;
     t->id = id;
@@ -558,7 +559,7 @@ mqtt_sn_cli_t *
 mqtt_sn_cli_create(mqtt_sn_cli_conf_t *config) {
     mqtt_sn_cli_t *m;
 
-    m = (mqtt_sn_cli_t *)malloc(sizeof *m);
+    m = (mqtt_sn_cli_t *)MQTT_MALLOC(sizeof *m);
     memset(m, 0, sizeof *m);
 
     mqtt_str_dup(&m->client_id, config->client_id);
@@ -600,7 +601,7 @@ mqtt_sn_cli_destroy(mqtt_sn_cli_t *m) {
     mqtt_str_free(&m->client_id);
     mqtt_str_free(&m->lwt.topic);
     mqtt_str_free(&m->lwt.message);
-    free(m);
+    MQTT_FREE(m);
 }
 
 mqtt_sn_cli_state_t
@@ -749,14 +750,13 @@ mqtt_sn_cli_outgoing(mqtt_sn_cli_t *m, mqtt_str_t *outgoing) {
 
     if (outgoing->n > 0) {
         mqtt_sn_cli_packet_t **pmp;
-        outgoing->s = malloc(outgoing->n);
+        outgoing->s = MQTT_MALLOC(outgoing->n);
         outgoing->n = 0;
 
         pmp = &m->padding;
         while (*pmp) {
             mp = *pmp;
             if (mp->wait_ack == 0) {
-                printf("send: %s\n", mqtt_sn_packet_type_name(mp->type));
                 mqtt_str_concat(outgoing, &mp->b);
                 mp->wait_ack = 1;
                 mp->t_send = m->t.now;
@@ -850,7 +850,7 @@ linux_udp_open(const char *host, int port) {
         return 0;
     }
 
-    net = (linux_udp_network_t *)malloc(sizeof *net);
+    net = (linux_udp_network_t *)MQTT_MALLOC(sizeof *net);
     memset(net, 0, sizeof *net);
 
     net->fd = fd;
@@ -959,7 +959,7 @@ linux_udp_close(void *net) {
     fd = ((linux_udp_network_t *)net)->fd;
 
     close(fd);
-    free(net);
+    MQTT_FREE(net);
 }
 
 int

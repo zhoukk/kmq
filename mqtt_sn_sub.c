@@ -329,6 +329,7 @@ _connack(mqtt_sn_cli_t *m, void *ud, const mqtt_sn_packet_t *pkt) {
     for (i = 0; i < topic_count; i++) {
         mqtt_sn_topic_t t;
 
+        memset(&t, 0, sizeof t);
         t.type = MQTT_SN_TOPIC_ID_TYPE_NORMAL;
         mqtt_str_from(&t.name, topics[i]);
         mqtt_sn_cli_subscribe(m, &t, qos, 0);

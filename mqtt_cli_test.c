@@ -5,7 +5,6 @@
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 
 static const char *topic = "mqtt/client/test";
 static mqtt_qos_t qos = MQTT_QOS_2;
