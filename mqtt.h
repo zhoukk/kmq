@@ -2297,7 +2297,7 @@ mqtt_packet_unit(mqtt_packet_t *pkt) {
         break;
     }
     mqtt_str_free(&pkt->b);
-    memset(pkt, 0, sizeof(*pkt));
+    memset(pkt, 0, sizeof *pkt);
 }
 
 static size_t
@@ -3018,7 +3018,7 @@ mqtt_parser_version(mqtt_parser_t *parser, mqtt_version_t version) {
 
 void
 mqtt_parser_unit(mqtt_parser_t *parser) {
-    (void)parser;
+    mqtt_packet_unit(&parser->pkt);
 }
 
 int
@@ -3096,18 +3096,15 @@ mqtt_parse(mqtt_parser_t *parser, mqtt_str_t *b, mqtt_packet_t *pkt) {
 
 e:
     if (rc == 1) {
-        if (pkt)
+        if (pkt) {
             *pkt = parser->pkt;
-        parser->pkt.b.s = 0;
-        parser->pkt.b.i = 0;
-        parser->pkt.b.n = 0;
+        }
+        memset(&parser->pkt, 0, sizeof parser->pkt);
     } else if (rc == -1) {
         if (parser->pkt.b.s) {
             free(parser->pkt.b.s);
-            parser->pkt.b.s = 0;
         }
-        parser->pkt.b.i = 0;
-        parser->pkt.b.n = 0;
+        memset(&parser->pkt, 0, sizeof parser->pkt);
     }
     return rc;
 }
@@ -3847,6 +3844,7 @@ mqtt_sn_packet_init(mqtt_sn_packet_t *pkt, mqtt_sn_packet_type_t type) {
 void
 mqtt_sn_packet_unit(mqtt_sn_packet_t *pkt) {
     mqtt_str_free(&pkt->b);
+    memset(pkt, 0, sizeof *pkt);
 }
 
 static int
@@ -4430,16 +4428,12 @@ e:
     if (rc == 1) {
         if (pkt)
             *pkt = parser->pkt;
-        parser->pkt.b.s = 0;
-        parser->pkt.b.i = 0;
-        parser->pkt.b.n = 0;
+        memset(&parser->pkt, 0, sizeof parser->pkt);
     } else if (rc == -1) {
         if (parser->pkt.b.s) {
             free(parser->pkt.b.s);
-            parser->pkt.b.s = 0;
         }
-        parser->pkt.b.i = 0;
-        parser->pkt.b.n = 0;
+        memset(&parser->pkt, 0, sizeof parser->pkt);
     }
     return rc;
 }

@@ -1458,6 +1458,25 @@ test_mqtt() {
         mqtt_str_free(&bs);
         free(s);
     }
+
+    {
+        mqtt_str_t bp = MQTT_STR_INITIALIZER;
+        mqtt_packet_t pkt;
+        mqtt_parser_t parser;
+        int rc;
+
+        char s[] = {0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9, 0xa, 0xb, 0xc, 0xd, 0xe, 0xf};
+        mqtt_str_init(&bp, s, 15);
+
+        mqtt_parser_init(&parser);
+        mqtt_parser_version(&parser, MQTT_VERSION_3);
+        rc = mqtt_parse(&parser, &bp, &pkt);
+
+        assert(rc == -1);
+
+        mqtt_packet_unit(&pkt);
+        mqtt_parser_unit(&parser);
+    }
 }
 
 static void
@@ -1831,6 +1850,82 @@ test_mqtt_sn() {
     free(s);
 }
 
+static void
+test_mqtt_random() {
+    mqtt_str_t bp = MQTT_STR_INITIALIZER;
+    mqtt_packet_t pkt;
+    mqtt_parser_t parser;
+    int rc;
+
+    srand(time(NULL));
+    size_t data_len = rand() % 1000 + 1;
+
+    char *random_data = malloc(data_len);
+    if (!random_data) {
+        printf("Failed to allocate memory for random data\n");
+        return;
+    }
+
+    for (size_t i = 0; i < data_len; i++) {
+        random_data[i] = (char)(rand() % 256);
+    }
+
+    mqtt_str_init(&bp, random_data, data_len);
+    bp.i = 0;
+
+    memset(&pkt, 0, sizeof(pkt));
+
+    mqtt_parser_init(&parser);
+
+    rc = mqtt_parse(&parser, &bp, &pkt);
+
+    printf("Random data test:\n");
+    printf("  Data length: %zu\n", data_len);
+    printf("  Parse result: %d\n", rc);
+
+    mqtt_packet_unit(&pkt);
+    mqtt_parser_unit(&parser);
+    free(random_data);
+}
+
+static void
+test_mqtt_sn_random() {
+    mqtt_str_t bp = MQTT_STR_INITIALIZER;
+    mqtt_sn_packet_t pkt;
+    mqtt_sn_parser_t parser;
+    int rc;
+
+    srand(time(NULL));
+    size_t data_len = rand() % 1000 + 1;
+
+    char *random_data = malloc(data_len);
+    if (!random_data) {
+        printf("Failed to allocate memory for random data\n");
+        return;
+    }
+
+    for (size_t i = 0; i < data_len; i++) {
+        random_data[i] = (char)(rand() % 256);
+    }
+
+    mqtt_str_init(&bp, random_data, data_len);
+    bp.i = 0;
+
+    memset(&pkt, 0, sizeof(pkt));
+
+    mqtt_sn_parser_init(&parser);
+
+    rc = mqtt_sn_parse(&parser, &bp, &pkt);
+
+    printf("Random data test:\n");
+    printf("  Data length: %zu\n", data_len);
+    printf("  Parse result: %d\n", rc);
+
+    mqtt_sn_packet_unit(&pkt);
+    mqtt_sn_parser_unit(&parser);
+    free(random_data);
+}
+
 int
 main(int argc, char *argv[]) {
     (void)argc;
@@ -1838,6 +1933,14 @@ main(int argc, char *argv[]) {
 
     test_mqtt();
     test_mqtt_sn();
+
+    for (int i = 0; i < 100; i++) {
+        test_mqtt_random();
+    }
+
+    for (int i = 0; i < 100; i++) {
+        test_mqtt_sn_random();
+    }
 
     return 0;
 }
