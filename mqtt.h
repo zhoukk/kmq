@@ -679,9 +679,10 @@ mqtt_rc_valid(mqtt_rc_t rc, mqtt_packet_type_t type) {
     n = sizeof(MQTT_RC_DEFS) / sizeof(MQTT_RC_DEFS[0]);
     for (i = 0; i < n; i++) {
         if (MQTT_RC_DEFS[i].rc == rc) {
-            int j;
+            int j, m;
 
-            for (j = 0; j < 16; j++) {
+            m = sizeof(MQTT_RC_DEFS[i].types) / sizeof(MQTT_RC_DEFS[i].types[0]);
+            for (j = 0; j < m; j++) {
                 if (MQTT_RC_DEFS[i].types[j] == type)
                     return 1;
             }
@@ -2039,14 +2040,17 @@ mqtt_fixed_valid(mqtt_fixed_header_t *f, uint8_t retain, uint8_t qos, uint8_t du
 
 static inline int
 mqtt_property_valid(mqtt_property_code_t code, mqtt_packet_type_t type, int will) {
-    int i, j, n;
+    int i, n;
 
     n = sizeof(MQTT_PROPERTY_DEFS) / sizeof(MQTT_PROPERTY_DEFS[0]);
     for (i = 0; i < n; i++) {
         if (MQTT_PROPERTY_DEFS[i].code == code) {
+            int j, m;
+
             if (will)
                 return MQTT_PROPERTY_DEFS[i].will;
-            for (j = 0; j < MQTT_AUTH; j++) {
+            m = sizeof(MQTT_PROPERTY_DEFS[i].types) / sizeof(MQTT_PROPERTY_DEFS[i].types[0]);
+            for (j = 0; j < m; j++) {
                 if (MQTT_PROPERTY_DEFS[i].types[j] == type)
                     return 1;
             }
