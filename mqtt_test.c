@@ -2,6 +2,7 @@
 #include "mqtt.h"
 
 #include <assert.h>
+#include <time.h>
 
 static void
 test_mqtt() {
