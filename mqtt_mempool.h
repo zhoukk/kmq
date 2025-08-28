@@ -155,10 +155,7 @@ mqtt_mempool_create(size_t block_size) {
     memset(pool, 0, sizeof(mqtt_mempool_t));
     pool->block_size = block_size;
 
-    if (MQTT_MEMPOOL_LOCK_INIT(pool->mutex) != 0) {
-        free(pool);
-        return NULL;
-    }
+    MQTT_MEMPOOL_LOCK_INIT(pool->mutex);
 
     for (i = 0; i < MQTT_MEMPOOL_SLAB_COUNT; i++) {
         pool->slabs[i].block_size = mqtt_mempool_slab_sizes[i];

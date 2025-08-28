@@ -435,10 +435,7 @@ mqtt_cli_create(mqtt_cli_conf_t *config) {
     }
     memset(m, 0, sizeof *m);
 
-    if (MQTT_CLI_LOCK_INIT(m->padding_lock) != 0) {
-        MQTT_FREE(m);
-        return 0;
-    }
+    MQTT_CLI_LOCK_INIT(m->padding_lock);
 
     mqtt_str_dup(&m->client_id, config->client_id);
     m->version = config->version;
