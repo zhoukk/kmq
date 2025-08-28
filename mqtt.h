@@ -2186,7 +2186,7 @@ void mqtt_sn_packet_unit(mqtt_sn_packet_t *pkt);
 /**
  * serialize a mqtt-sn packet into data/size pair
  */
-void mqtt_sn_serialize(mqtt_sn_packet_t *pkt, mqtt_str_t *b);
+int mqtt_sn_serialize(mqtt_sn_packet_t *pkt, mqtt_str_t *b);
 
 /**
  * mqtt-sn packet parser funcs.
@@ -4481,10 +4481,13 @@ mqtt_sn_write_length(mqtt_str_t *b, uint16_t length) {
     }
 }
 
-static void
+static int
 __sn_serialize_advertise(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
     uint8_t length = 5;
     b->s = (char *)MQTT_MALLOC(length);
+    if (!b->s) {
+        return -1;
+    }
     b->n = length;
     b->i = 0;
 
@@ -4492,24 +4495,34 @@ __sn_serialize_advertise(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
     mqtt_str_write_u8(b, MQTT_SN_ADVERTISE);
     mqtt_str_write_u8(b, pkt->v.advertise.gwid);
     mqtt_str_write_u16(b, pkt->v.advertise.duration);
+
+    return 0;
 }
 
-static void
+static int
 __sn_serialize_searchgw(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
     uint8_t length = 3;
     b->s = (char *)MQTT_MALLOC(length);
+    if (!b->s) {
+        return -1;
+    }
     b->n = length;
     b->i = 0;
 
     mqtt_str_write_u8(b, length);
     mqtt_str_write_u8(b, MQTT_SN_SEARCHGW);
     mqtt_str_write_u8(b, pkt->v.searchgw.radius);
+
+    return 0;
 }
 
-static void
+static int
 __sn_serialize_gwinfo(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
     uint8_t length = 3 + pkt->v.gwinfo.gwadd.n;
     b->s = (char *)MQTT_MALLOC(length);
+    if (!b->s) {
+        return -1;
+    }
     b->n = length;
     b->i = 0;
 
@@ -4517,12 +4530,17 @@ __sn_serialize_gwinfo(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
     mqtt_str_write_u8(b, MQTT_SN_GWINFO);
     mqtt_str_write_u8(b, pkt->v.gwinfo.gwid);
     mqtt_str_concat(b, &pkt->v.gwinfo.gwadd);
+
+    return 0;
 }
 
-static void
+static int
 __sn_serialize_connect(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
     uint8_t length = 6 + pkt->v.connect.client_id.n;
     b->s = (char *)MQTT_MALLOC(length);
+    if (!b->s) {
+        return -1;
+    }
     b->n = length;
     b->i = 0;
 
@@ -4532,33 +4550,45 @@ __sn_serialize_connect(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
     mqtt_str_write_u8(b, pkt->v.connect.protocol_id);
     mqtt_str_write_u16(b, pkt->v.connect.duration);
     mqtt_str_concat(b, &pkt->v.connect.client_id);
+
+    return 0;
 }
 
-static void
+static int
 __sn_serialize_connack(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
     uint8_t length = 3;
     b->s = (char *)MQTT_MALLOC(length);
+    if (!b->s) {
+        return -1;
+    }
     b->n = length;
     b->i = 0;
 
     mqtt_str_write_u8(b, length);
     mqtt_str_write_u8(b, MQTT_SN_CONNACK);
     mqtt_str_write_u8(b, (uint8_t)pkt->v.connack.return_code);
+
+    return 0;
 }
 
-static void
+static int
 __sn_serialize_willtopicreq(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
     (void)pkt;
     uint8_t length = 2;
     b->s = (char *)MQTT_MALLOC(length);
+    if (!b->s) {
+        return -1;
+    }
     b->n = length;
     b->i = 0;
 
     mqtt_str_write_u8(b, length);
     mqtt_str_write_u8(b, MQTT_SN_WILLTOPICREQ);
+
+    return 0;
 }
 
-static void
+static int
 __sn_serialize_willtopic(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
     uint16_t length;
 
@@ -4567,6 +4597,9 @@ __sn_serialize_willtopic(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
     else
         length = 2;
     b->s = (char *)MQTT_MALLOC(length);
+    if (!b->s) {
+        return -1;
+    }
     b->n = length;
     b->i = 0;
 
@@ -4576,36 +4609,51 @@ __sn_serialize_willtopic(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
         mqtt_str_write_u8(b, pkt->v.willtopic.flags.flag);
         mqtt_str_concat(b, &pkt->v.willtopic.topic_name);
     }
+
+    return 0;
 }
 
-static void
+static int
 __sn_serialize_willmsgreq(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
     (void)pkt;
     uint8_t length = 2;
     b->s = (char *)MQTT_MALLOC(length);
+    if (!b->s) {
+        return -1;
+    }
     b->n = length;
     b->i = 0;
 
     mqtt_str_write_u8(b, length);
     mqtt_str_write_u8(b, MQTT_SN_WILLMSGREQ);
+
+    return 0;
 }
 
-static void
+static int
 __sn_serialize_willmsg(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
     uint16_t length = mqtt_sn_vbi_length(1 + pkt->v.willmsg.message.n);
     b->s = (char *)MQTT_MALLOC(length);
+    if (!b->s) {
+        return -1;
+    }
     b->n = length;
     b->i = 0;
 
     mqtt_sn_write_length(b, length);
     mqtt_str_write_u8(b, MQTT_SN_WILLMSG);
     mqtt_str_concat(b, &pkt->v.willmsg.message);
+
+    return 0;
 }
 
-static void
+static int
 __sn_serialize_register(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
     uint16_t length = mqtt_sn_vbi_length(5 + pkt->v.regist.topic_name.n);
     b->s = (char *)MQTT_MALLOC(length);
+    if (!b->s) {
+        return -1;
+    }
     b->n = length;
     b->i = 0;
 
@@ -4614,12 +4662,17 @@ __sn_serialize_register(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
     mqtt_str_write_u16(b, pkt->v.regist.topic_id);
     mqtt_str_write_u16(b, pkt->v.regist.msg_id);
     mqtt_str_concat(b, &pkt->v.regist.topic_name);
+
+    return 0;
 }
 
-static void
+static int
 __sn_serialize_regack(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
     uint8_t length = 7;
     b->s = (char *)MQTT_MALLOC(length);
+    if (!b->s) {
+        return -1;
+    }
     b->n = length;
     b->i = 0;
 
@@ -4628,13 +4681,18 @@ __sn_serialize_regack(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
     mqtt_str_write_u16(b, pkt->v.regack.topic_id);
     mqtt_str_write_u16(b, pkt->v.regack.msg_id);
     mqtt_str_write_u8(b, (uint8_t)pkt->v.regack.return_code);
+
+    return 0;
 }
 
-static void
+static int
 __sn_serialize_publish(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
     uint8_t topic_id_type = pkt->v.publish.flags.bits.topic_id_type;
     uint16_t length = mqtt_sn_vbi_length(6 + pkt->v.publish.data.n);
     b->s = (char *)MQTT_MALLOC(length);
+    if (!b->s) {
+        return -1;
+    }
     b->n = length;
     b->i = 0;
 
@@ -4650,12 +4708,17 @@ __sn_serialize_publish(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
 
     mqtt_str_write_u16(b, pkt->v.publish.msg_id);
     mqtt_str_concat(b, &pkt->v.publish.data);
+
+    return 0;
 }
 
-static void
+static int
 __sn_serialize_puback(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
     uint8_t length = 7;
     b->s = (char *)MQTT_MALLOC(length);
+    if (!b->s) {
+        return -1;
+    }
     b->n = length;
     b->i = 0;
 
@@ -4664,45 +4727,62 @@ __sn_serialize_puback(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
     mqtt_str_write_u16(b, pkt->v.puback.topic.id);
     mqtt_str_write_u16(b, pkt->v.puback.msg_id);
     mqtt_str_write_u8(b, (uint8_t)pkt->v.puback.return_code);
+
+    return 0;
 }
 
-static void
+static int
 __sn_serialize_pubrec(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
     uint8_t length = 4;
     b->s = (char *)MQTT_MALLOC(length);
+    if (!b->s) {
+        return -1;
+    }
     b->n = length;
     b->i = 0;
 
     mqtt_str_write_u8(b, length);
     mqtt_str_write_u8(b, MQTT_SN_PUBREC);
     mqtt_str_write_u16(b, pkt->v.pubrec.msg_id);
+
+    return 0;
 }
 
-static void
+static int
 __sn_serialize_pubrel(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
     uint8_t length = 4;
     b->s = (char *)MQTT_MALLOC(length);
+    if (!b->s) {
+        return -1;
+    }
     b->n = length;
     b->i = 0;
 
     mqtt_str_write_u8(b, length);
     mqtt_str_write_u8(b, MQTT_SN_PUBREL);
     mqtt_str_write_u16(b, pkt->v.pubrel.msg_id);
+
+    return 0;
 }
 
-static void
+static int
 __sn_serialize_pubcomp(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
     uint8_t length = 4;
     b->s = (char *)MQTT_MALLOC(length);
+    if (!b->s) {
+        return -1;
+    }
     b->n = length;
     b->i = 0;
 
     mqtt_str_write_u8(b, length);
     mqtt_str_write_u8(b, MQTT_SN_PUBCOMP);
     mqtt_str_write_u16(b, pkt->v.pubcomp.msg_id);
+
+    return 0;
 }
 
-static void
+static int
 __sn_serialize_subscribe(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
     uint16_t length = 4;
     uint8_t topic_id_type = pkt->v.subscribe.flags.bits.topic_id_type;
@@ -4715,6 +4795,9 @@ __sn_serialize_subscribe(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
         length += 2;
     length = mqtt_sn_vbi_length(length);
     b->s = (char *)MQTT_MALLOC(length);
+    if (!b->s) {
+        return -1;
+    }
     b->n = length;
     b->i = 0;
 
@@ -4729,12 +4812,17 @@ __sn_serialize_subscribe(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
         b->i += 2;
     } else if (topic_id_type == MQTT_SN_TOPIC_ID_TYPE_PREDEFINED)
         mqtt_str_write_u16(b, pkt->v.subscribe.topic.id);
+
+    return 0;
 }
 
-static void
+static int
 __sn_serialize_suback(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
     uint8_t length = 8;
     b->s = (char *)MQTT_MALLOC(length);
+    if (!b->s) {
+        return -1;
+    }
     b->n = length;
     b->i = 0;
 
@@ -4744,9 +4832,11 @@ __sn_serialize_suback(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
     mqtt_str_write_u16(b, pkt->v.suback.topic_id);
     mqtt_str_write_u16(b, pkt->v.suback.msg_id);
     mqtt_str_write_u8(b, (uint8_t)pkt->v.suback.return_code);
+
+    return 0;
 }
 
-static void
+static int
 __sn_serialize_unsubscribe(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
     uint16_t length = 4;
     uint8_t topic_id_type = pkt->v.unsubscribe.flags.bits.topic_id_type;
@@ -4759,6 +4849,9 @@ __sn_serialize_unsubscribe(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
         length += 2;
     length = mqtt_sn_vbi_length(length);
     b->s = (char *)MQTT_MALLOC(length);
+    if (!b->s) {
+        return -1;
+    }
     b->n = length;
     b->i = 0;
 
@@ -4773,24 +4866,34 @@ __sn_serialize_unsubscribe(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
         b->i += 2;
     } else if (topic_id_type == MQTT_SN_TOPIC_ID_TYPE_PREDEFINED)
         mqtt_str_write_u16(b, pkt->v.unsubscribe.topic.id);
+
+    return 0;
 }
 
-static void
+static int
 __sn_serialize_unsuback(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
     uint8_t length = 4;
     b->s = (char *)MQTT_MALLOC(length);
+    if (!b->s) {
+        return -1;
+    }
     b->n = length;
     b->i = 0;
 
     mqtt_str_write_u8(b, length);
     mqtt_str_write_u8(b, MQTT_SN_UNSUBACK);
     mqtt_str_write_u16(b, pkt->v.unsuback.msg_id);
+
+    return 0;
 }
 
-static void
+static int
 __sn_serialize_pingreq(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
     uint8_t length = 2 + pkt->v.pingreq.client_id.n;
     b->s = (char *)MQTT_MALLOC(length);
+    if (!b->s) {
+        return -1;
+    }
     b->n = length;
     b->i = 0;
 
@@ -4798,27 +4901,37 @@ __sn_serialize_pingreq(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
     mqtt_str_write_u8(b, MQTT_SN_PINGREQ);
     if (pkt->v.pingreq.client_id.n > 0)
         mqtt_str_concat(b, &pkt->v.pingreq.client_id);
+
+    return 0;
 }
 
-static void
+static int
 __sn_serialize_pingresp(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
     (void)pkt;
     uint8_t length = 2;
     b->s = (char *)MQTT_MALLOC(length);
+    if (!b->s) {
+        return -1;
+    }
     b->n = length;
     b->i = 0;
 
     mqtt_str_write_u8(b, length);
     mqtt_str_write_u8(b, MQTT_SN_PINGRESP);
+
+    return 0;
 }
 
-static void
+static int
 __sn_serialize_disconnect(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
     uint8_t length = 2;
 
     if (pkt->v.disconnect.duration > 0)
         length += 2;
     b->s = (char *)MQTT_MALLOC(length);
+    if (!b->s) {
+        return -1;
+    }
     b->n = length;
     b->i = 0;
 
@@ -4826,9 +4939,11 @@ __sn_serialize_disconnect(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
     mqtt_str_write_u8(b, MQTT_SN_DISCONNECT);
     if (pkt->v.disconnect.duration > 0)
         mqtt_str_write_u16(b, pkt->v.disconnect.duration);
+
+    return 0;
 }
 
-static void
+static int
 __sn_serialize_willtopicupd(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
     uint16_t length;
 
@@ -4838,6 +4953,9 @@ __sn_serialize_willtopicupd(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
         length = mqtt_sn_vbi_length(2 + pkt->v.willtopicupd.topic_name.n);
 
     b->s = (char *)MQTT_MALLOC(length);
+    if (!b->s) {
+        return -1;
+    }
     b->n = length;
     b->i = 0;
 
@@ -4847,48 +4965,68 @@ __sn_serialize_willtopicupd(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
         mqtt_str_write_u8(b, pkt->v.willtopicupd.flags.flag);
         mqtt_str_concat(b, &pkt->v.willtopicupd.topic_name);
     }
+
+    return 0;
 }
 
-static void
+static int
 __sn_serialize_willmsgupd(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
     uint16_t length = mqtt_sn_vbi_length(1 + pkt->v.willmsgupd.message.n);
     b->s = (char *)MQTT_MALLOC(length);
+    if (!b->s) {
+        return -1;
+    }
     b->n = length;
     b->i = 0;
 
     mqtt_sn_write_length(b, length);
     mqtt_str_write_u8(b, MQTT_SN_WILLMSGUPD);
     mqtt_str_concat(b, &pkt->v.willmsgupd.message);
+
+    return 0;
 }
 
-static void
+static int
 __sn_serialize_willtopicresp(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
     uint8_t length = 3;
     b->s = (char *)MQTT_MALLOC(length);
+    if (!b->s) {
+        return -1;
+    }
     b->n = length;
     b->i = 0;
 
     mqtt_str_write_u8(b, length);
     mqtt_str_write_u8(b, MQTT_SN_WILLTOPICRESP);
     mqtt_str_write_u8(b, (uint8_t)pkt->v.willtopicresp.return_code);
+
+    return 0;
 }
 
-static void
+static int
 __sn_serialize_willmsgresp(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
     uint8_t length = 3;
     b->s = (char *)MQTT_MALLOC(length);
+    if (!b->s) {
+        return -1;
+    }
     b->n = length;
     b->i = 0;
 
     mqtt_str_write_u8(b, length);
     mqtt_str_write_u8(b, MQTT_SN_WILLMSGRESP);
     mqtt_str_write_u8(b, (uint8_t)pkt->v.willmsgresp.return_code);
+
+    return 0;
 }
 
-static void
+static int
 __sn_serialize_encapsulated(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
     uint16_t length = mqtt_sn_vbi_length(2 + pkt->v.encapsulated.wireless_node.n);
     b->s = (char *)MQTT_MALLOC(length);
+    if (!b->s) {
+        return -1;
+    }
     b->n = length;
     b->i = 0;
 
@@ -4896,99 +5034,106 @@ __sn_serialize_encapsulated(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
     mqtt_str_write_u8(b, MQTT_SN_ENCAPSULATED);
     mqtt_str_write_u8(b, pkt->v.encapsulated.ctrl);
     mqtt_str_concat(b, &pkt->v.encapsulated.wireless_node);
+
+    return 0;
 }
 
-void
+int
 mqtt_sn_serialize(mqtt_sn_packet_t *pkt, mqtt_str_t *b) {
+    int rc;
+
     mqtt_str_init(b, 0, 0);
     switch (pkt->type) {
     case MQTT_SN_ADVERTISE:
-        __sn_serialize_advertise(pkt, b);
+        rc = __sn_serialize_advertise(pkt, b);
         break;
     case MQTT_SN_SEARCHGW:
-        __sn_serialize_searchgw(pkt, b);
+        rc = __sn_serialize_searchgw(pkt, b);
         break;
     case MQTT_SN_GWINFO:
-        __sn_serialize_gwinfo(pkt, b);
+        rc = __sn_serialize_gwinfo(pkt, b);
         break;
     case MQTT_SN_CONNECT:
-        __sn_serialize_connect(pkt, b);
+        rc = __sn_serialize_connect(pkt, b);
         break;
     case MQTT_SN_CONNACK:
-        __sn_serialize_connack(pkt, b);
+        rc = __sn_serialize_connack(pkt, b);
         break;
     case MQTT_SN_WILLTOPICREQ:
-        __sn_serialize_willtopicreq(pkt, b);
+        rc = __sn_serialize_willtopicreq(pkt, b);
         break;
     case MQTT_SN_WILLTOPIC:
-        __sn_serialize_willtopic(pkt, b);
+        rc = __sn_serialize_willtopic(pkt, b);
         break;
     case MQTT_SN_WILLMSGREQ:
-        __sn_serialize_willmsgreq(pkt, b);
+        rc = __sn_serialize_willmsgreq(pkt, b);
         break;
     case MQTT_SN_WILLMSG:
-        __sn_serialize_willmsg(pkt, b);
+        rc = __sn_serialize_willmsg(pkt, b);
         break;
     case MQTT_SN_REGISTER:
-        __sn_serialize_register(pkt, b);
+        rc = __sn_serialize_register(pkt, b);
         break;
     case MQTT_SN_REGACK:
-        __sn_serialize_regack(pkt, b);
+        rc = __sn_serialize_regack(pkt, b);
         break;
     case MQTT_SN_PUBLISH:
-        __sn_serialize_publish(pkt, b);
+        rc = __sn_serialize_publish(pkt, b);
         break;
     case MQTT_SN_PUBACK:
-        __sn_serialize_puback(pkt, b);
+        rc = __sn_serialize_puback(pkt, b);
         break;
     case MQTT_SN_PUBREC:
-        __sn_serialize_pubrec(pkt, b);
+        rc = __sn_serialize_pubrec(pkt, b);
         break;
     case MQTT_SN_PUBREL:
-        __sn_serialize_pubrel(pkt, b);
+        rc = __sn_serialize_pubrel(pkt, b);
         break;
     case MQTT_SN_PUBCOMP:
-        __sn_serialize_pubcomp(pkt, b);
+        rc = __sn_serialize_pubcomp(pkt, b);
         break;
     case MQTT_SN_SUBSCRIBE:
-        __sn_serialize_subscribe(pkt, b);
+        rc = __sn_serialize_subscribe(pkt, b);
         break;
     case MQTT_SN_SUBACK:
-        __sn_serialize_suback(pkt, b);
+        rc = __sn_serialize_suback(pkt, b);
         break;
     case MQTT_SN_UNSUBSCRIBE:
-        __sn_serialize_unsubscribe(pkt, b);
+        rc = __sn_serialize_unsubscribe(pkt, b);
         break;
     case MQTT_SN_UNSUBACK:
-        __sn_serialize_unsuback(pkt, b);
+        rc = __sn_serialize_unsuback(pkt, b);
         break;
     case MQTT_SN_PINGREQ:
-        __sn_serialize_pingreq(pkt, b);
+        rc = __sn_serialize_pingreq(pkt, b);
         break;
     case MQTT_SN_PINGRESP:
-        __sn_serialize_pingresp(pkt, b);
+        rc = __sn_serialize_pingresp(pkt, b);
         break;
     case MQTT_SN_DISCONNECT:
-        __sn_serialize_disconnect(pkt, b);
+        rc = __sn_serialize_disconnect(pkt, b);
         break;
     case MQTT_SN_WILLTOPICUPD:
-        __sn_serialize_willtopicupd(pkt, b);
+        rc = __sn_serialize_willtopicupd(pkt, b);
         break;
     case MQTT_SN_WILLMSGUPD:
-        __sn_serialize_willmsgupd(pkt, b);
+        rc = __sn_serialize_willmsgupd(pkt, b);
         break;
     case MQTT_SN_WILLTOPICRESP:
-        __sn_serialize_willtopicresp(pkt, b);
+        rc = __sn_serialize_willtopicresp(pkt, b);
         break;
     case MQTT_SN_WILLMSGRESP:
-        __sn_serialize_willmsgresp(pkt, b);
+        rc = __sn_serialize_willmsgresp(pkt, b);
         break;
     case MQTT_SN_ENCAPSULATED:
-        __sn_serialize_encapsulated(pkt, b);
+        rc = __sn_serialize_encapsulated(pkt, b);
         break;
     default:
+        rc = -1;
         break;
     }
+
+    return rc;
 }
 
 #endif /* MQTT_IMPL */

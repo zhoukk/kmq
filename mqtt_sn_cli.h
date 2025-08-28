@@ -79,16 +79,16 @@ void mqtt_sn_cli_destroy(mqtt_sn_cli_t *m);
 
 mqtt_sn_cli_state_t mqtt_sn_cli_state(mqtt_sn_cli_t *m);
 
-void mqtt_sn_cli_searchgw(mqtt_sn_cli_t *m, uint8_t radius);
-void mqtt_sn_cli_connect(mqtt_sn_cli_t *m);
-void mqtt_sn_cli_register(mqtt_sn_cli_t *m, const char *topic, uint16_t *packet_id);
+int mqtt_sn_cli_searchgw(mqtt_sn_cli_t *m, uint8_t radius);
+int mqtt_sn_cli_connect(mqtt_sn_cli_t *m);
+int mqtt_sn_cli_register(mqtt_sn_cli_t *m, const char *topic, uint16_t *packet_id);
 
-void mqtt_sn_cli_publish(mqtt_sn_cli_t *m, int retain, mqtt_sn_topic_t *topic, mqtt_sn_qos_t qos, mqtt_str_t *message,
-                         uint16_t *packet_id);
-void mqtt_sn_cli_subscribe(mqtt_sn_cli_t *m, mqtt_sn_topic_t *topic, mqtt_sn_qos_t qos, uint16_t *packet_id);
-void mqtt_sn_cli_unsubscribe(mqtt_sn_cli_t *m, mqtt_sn_topic_t *topic, uint16_t *packet_id);
-void mqtt_sn_cli_pingreq(mqtt_sn_cli_t *m);
-void mqtt_sn_cli_disconnect(mqtt_sn_cli_t *m, uint16_t duration);
+int mqtt_sn_cli_publish(mqtt_sn_cli_t *m, int retain, mqtt_sn_topic_t *topic, mqtt_sn_qos_t qos, mqtt_str_t *message,
+                        uint16_t *packet_id);
+int mqtt_sn_cli_subscribe(mqtt_sn_cli_t *m, mqtt_sn_topic_t *topic, mqtt_sn_qos_t qos, uint16_t *packet_id);
+int mqtt_sn_cli_unsubscribe(mqtt_sn_cli_t *m, mqtt_sn_topic_t *topic, uint16_t *packet_id);
+int mqtt_sn_cli_pingreq(mqtt_sn_cli_t *m);
+int mqtt_sn_cli_disconnect(mqtt_sn_cli_t *m, uint16_t duration);
 
 int mqtt_sn_cli_outgoing(mqtt_sn_cli_t *m, mqtt_str_t *outgoing);
 int mqtt_sn_cli_incoming(mqtt_sn_cli_t *m, mqtt_str_t *incoming);
@@ -245,14 +245,18 @@ _erase_padding(mqtt_sn_cli_t *m, mqtt_sn_packet_type_t type, uint16_t packet_id)
     return -1;
 }
 
-static void
+static int
 _append_padding(mqtt_sn_cli_t *m, mqtt_sn_packet_t *pkt) {
     mqtt_str_t b = MQTT_STR_INITIALIZER;
     mqtt_sn_cli_packet_t *mp;
 
-    mqtt_sn_serialize(pkt, &b);
+    if (mqtt_sn_serialize(pkt, &b))
+        return -1;
 
     mp = (mqtt_sn_cli_packet_t *)MQTT_MALLOC(sizeof *mp);
+    if (!mp)
+        return -1;
+
     memset(mp, 0, sizeof *mp);
     mp->type = pkt->type;
     mqtt_str_set(&mp->b, &b);
@@ -293,13 +297,14 @@ _append_padding(mqtt_sn_cli_t *m, mqtt_sn_packet_t *pkt) {
         p->next = mp;
     }
     mqtt_sn_packet_unit(pkt);
+
+    return 0;
 }
 
-static void
-_send_puback(mqtt_sn_cli_t *m, mqtt_sn_packet_type_t type, uint16_t packet_id) {
+static int rc = _send_puback(mqtt_sn_cli_t * m, mqtt_sn_packet_type_t type, uint16_t packet_id) {
     mqtt_sn_packet_t pkt;
 
-    mqtt_sn_packet_init(&pkt, type);
+    rc = mqtt_sn_packet_init(&pkt, type);
     switch (type) {
     case MQTT_SN_PUBACK:
         pkt.v.puback.msg_id = packet_id;
@@ -317,14 +322,17 @@ _send_puback(mqtt_sn_cli_t *m, mqtt_sn_packet_type_t type, uint16_t packet_id) {
         break;
     }
 
-    _append_padding(m, &pkt);
+    return _append_padding(m, &pkt);
 }
 
-static void
+static int
 _regist_topic_id(mqtt_sn_cli_t *m, const char *topic, uint16_t id, uint16_t packet_id) {
     mqtt_sn_cli_topic_t *t;
 
     t = (mqtt_sn_cli_topic_t *)MQTT_MALLOC(sizeof *t);
+    if (!t)
+        return -1;
+
     t->topic = MQTT_MALLOC(strlen(topic));
     memcpy(t->topic, topic, strlen(topic));
     t->packet_id = packet_id;
@@ -342,6 +350,8 @@ _regist_topic_id(mqtt_sn_cli_t *m, const char *topic, uint16_t id, uint16_t pack
         }
         p->next = t;
     }
+
+    return 0;
 }
 
 static uint16_t
@@ -372,7 +382,7 @@ _update_topic_id(mqtt_sn_cli_t *m, uint16_t id, uint16_t packet_id) {
     }
 }
 
-static void
+static int
 _send_willtopic(mqtt_sn_cli_t *m) {
     mqtt_sn_packet_t pkt;
 
@@ -381,17 +391,17 @@ _send_willtopic(mqtt_sn_cli_t *m) {
     pkt.v.willtopic.flags.bits.retain = m->lwt.retain;
     mqtt_str_set(&pkt.v.willtopic.topic_name, &m->lwt.topic);
 
-    _append_padding(m, &pkt);
+    return _append_padding(m, &pkt);
 }
 
-static void
+static int
 _send_willmsg(mqtt_sn_cli_t *m) {
     mqtt_sn_packet_t pkt;
 
     mqtt_sn_packet_init(&pkt, MQTT_SN_WILLMSG);
     mqtt_str_set(&pkt.v.willmsg.message, &m->lwt.message);
 
-    _append_padding(m, &pkt);
+    return _append_padding(m, &pkt);
 }
 
 static int
@@ -399,7 +409,6 @@ _handle_packet(mqtt_sn_cli_t *m, mqtt_sn_packet_t *pkt) {
     int rc;
 
     rc = 0;
-    printf("recv: %s\n", mqtt_sn_packet_type_name(pkt->type));
     switch (pkt->type) {
     case MQTT_SN_ADVERTISE:
         if (m->cb.advertise) {
@@ -431,13 +440,13 @@ _handle_packet(mqtt_sn_cli_t *m, mqtt_sn_packet_t *pkt) {
         break;
     case MQTT_SN_WILLTOPICREQ:
         if (!_erase_padding(m, MQTT_SN_CONNECT, 0))
-            _send_willtopic(m);
+            rc = _send_willtopic(m);
         else
             rc = -1;
         break;
     case MQTT_SN_WILLMSGREQ:
         if (!_erase_padding(m, MQTT_SN_WILLTOPIC, 0))
-            _send_willmsg(m);
+            rc = _send_willmsg(m);
         else
             rc = -1;
         break;
@@ -468,10 +477,10 @@ _handle_packet(mqtt_sn_cli_t *m, mqtt_sn_packet_t *pkt) {
         }
         switch (pkt->v.publish.flags.bits.qos) {
         case MQTT_SN_QOS_1:
-            _send_puback(m, MQTT_SN_PUBACK, pkt->v.publish.msg_id);
+            rc = _send_puback(m, MQTT_SN_PUBACK, pkt->v.publish.msg_id);
             break;
         case MQTT_SN_QOS_2:
-            _send_puback(m, MQTT_SN_PUBREC, pkt->v.publish.msg_id);
+            rc = _send_puback(m, MQTT_SN_PUBREC, pkt->v.publish.msg_id);
             break;
         default:
             break;
@@ -488,14 +497,14 @@ _handle_packet(mqtt_sn_cli_t *m, mqtt_sn_packet_t *pkt) {
         break;
     case MQTT_SN_PUBREC:
         if (!_erase_padding(m, MQTT_SN_PUBLISH, pkt->v.pubrec.msg_id)) {
-            _send_puback(m, MQTT_SN_PUBREL, pkt->v.pubrec.msg_id);
+            rc = _send_puback(m, MQTT_SN_PUBREL, pkt->v.pubrec.msg_id);
         } else {
             rc = -1;
         }
         break;
     case MQTT_SN_PUBREL:
         if (!_erase_padding(m, MQTT_SN_PUBREC, pkt->v.pubrel.msg_id)) {
-            _send_puback(m, MQTT_SN_PUBCOMP, pkt->v.pubrel.msg_id);
+            rc = _send_puback(m, MQTT_SN_PUBCOMP, pkt->v.pubrel.msg_id);
         } else {
             rc = -1;
         }
@@ -560,6 +569,9 @@ mqtt_sn_cli_create(mqtt_sn_cli_conf_t *config) {
     mqtt_sn_cli_t *m;
 
     m = (mqtt_sn_cli_t *)MQTT_MALLOC(sizeof *m);
+    if (!m)
+        return 0;
+
     memset(m, 0, sizeof *m);
 
     mqtt_str_dup(&m->client_id, config->client_id);
@@ -609,7 +621,7 @@ mqtt_sn_cli_state(mqtt_sn_cli_t *m) {
     return m->state;
 }
 
-void
+int
 mqtt_sn_cli_searchgw(mqtt_sn_cli_t *m, uint8_t radius) {
     mqtt_sn_packet_t pkt;
 
@@ -618,10 +630,10 @@ mqtt_sn_cli_searchgw(mqtt_sn_cli_t *m, uint8_t radius) {
 
     m->state = MQTT_SN_STATE_SEARCHGW;
 
-    _append_padding(m, &pkt);
+    return _append_padding(m, &pkt);
 }
 
-void
+int
 mqtt_sn_cli_connect(mqtt_sn_cli_t *m) {
     mqtt_sn_packet_t pkt;
 
@@ -634,10 +646,10 @@ mqtt_sn_cli_connect(mqtt_sn_cli_t *m) {
 
     m->state = MQTT_SN_STATE_CONNECTING;
 
-    _append_padding(m, &pkt);
+    return _append_padding(m, &pkt);
 }
 
-void
+int
 mqtt_sn_cli_register(mqtt_sn_cli_t *m, const char *topic, uint16_t *packet_id) {
     mqtt_sn_packet_t pkt;
 
@@ -650,10 +662,10 @@ mqtt_sn_cli_register(mqtt_sn_cli_t *m, const char *topic, uint16_t *packet_id) {
 
     _regist_topic_id(m, topic, 0, pkt.v.regist.msg_id);
 
-    _append_padding(m, &pkt);
+    return _append_padding(m, &pkt);
 }
 
-void
+int
 mqtt_sn_cli_publish(mqtt_sn_cli_t *m, int retain, mqtt_sn_topic_t *topic, mqtt_sn_qos_t qos, mqtt_str_t *message,
                     uint16_t *packet_id) {
     mqtt_sn_packet_t pkt;
@@ -676,10 +688,10 @@ mqtt_sn_cli_publish(mqtt_sn_cli_t *m, int retain, mqtt_sn_topic_t *topic, mqtt_s
     if (packet_id)
         *packet_id = pkt.v.publish.msg_id;
 
-    _append_padding(m, &pkt);
+    return _append_padding(m, &pkt);
 }
 
-void
+int
 mqtt_sn_cli_subscribe(mqtt_sn_cli_t *m, mqtt_sn_topic_t *topic, mqtt_sn_qos_t qos, uint16_t *packet_id) {
     mqtt_sn_packet_t pkt;
 
@@ -692,10 +704,10 @@ mqtt_sn_cli_subscribe(mqtt_sn_cli_t *m, mqtt_sn_topic_t *topic, mqtt_sn_qos_t qo
     if (packet_id)
         *packet_id = pkt.v.subscribe.msg_id;
 
-    _append_padding(m, &pkt);
+    return _append_padding(m, &pkt);
 }
 
-void
+int
 mqtt_sn_cli_unsubscribe(mqtt_sn_cli_t *m, mqtt_sn_topic_t *topic, uint16_t *packet_id) {
     mqtt_sn_packet_t pkt;
 
@@ -707,10 +719,10 @@ mqtt_sn_cli_unsubscribe(mqtt_sn_cli_t *m, mqtt_sn_topic_t *topic, uint16_t *pack
     if (packet_id)
         *packet_id = pkt.v.unsubscribe.msg_id;
 
-    _append_padding(m, &pkt);
+    return _append_padding(m, &pkt);
 }
 
-void
+int
 mqtt_sn_cli_pingreq(mqtt_sn_cli_t *m) {
     mqtt_sn_packet_t pkt;
 
@@ -721,10 +733,10 @@ mqtt_sn_cli_pingreq(mqtt_sn_cli_t *m) {
     }
     m->t.ping = m->t.now;
 
-    _append_padding(m, &pkt);
+    return _append_padding(m, &pkt);
 }
 
-void
+int
 mqtt_sn_cli_disconnect(mqtt_sn_cli_t *m, uint16_t duration) {
     mqtt_sn_packet_t pkt;
 
@@ -732,7 +744,7 @@ mqtt_sn_cli_disconnect(mqtt_sn_cli_t *m, uint16_t duration) {
 
     m->asleep_duration = duration;
 
-    _append_padding(m, &pkt);
+    return _append_padding(m, &pkt);
 }
 
 int
@@ -751,6 +763,8 @@ mqtt_sn_cli_outgoing(mqtt_sn_cli_t *m, mqtt_str_t *outgoing) {
     if (outgoing->n > 0) {
         mqtt_sn_cli_packet_t **pmp;
         outgoing->s = MQTT_MALLOC(outgoing->n);
+        if (!outgoing->s)
+            return -1;
         outgoing->n = 0;
 
         pmp = &m->padding;
@@ -851,6 +865,10 @@ linux_udp_open(const char *host, int port) {
     }
 
     net = (linux_udp_network_t *)MQTT_MALLOC(sizeof *net);
+    if (!net) {
+        close(fd);
+        return 0;
+    }
     memset(net, 0, sizeof *net);
 
     net->fd = fd;
