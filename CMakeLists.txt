@@ -2,25 +2,23 @@ cmake_minimum_required(VERSION 3.10)
 
 project(mqtt VERSION 0.0.1 LANGUAGES C)
 
-set(CMAKE_C_STANDARD 99)
+set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Werror -Wextra -Wno-unused-parameter")
-
-find_package(PkgConfig REQUIRED)
-
-pkg_check_modules(LIBUV REQUIRED libuv)
-if(NOT LIBUV_FOUND)
-    message(FATAL_ERROR "libuv library not found")
+if(MSVC)
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /W3")
+else()
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Werror -Wextra -Wno-unused-parameter")
 endif()
 
-find_package(OpenSSL REQUIRED)
+if(WIN32)
+    find_package(OpenSSL)
+else()
+    find_package(OpenSSL)
+endif()
 
 include_directories(${PROJECT_SOURCE_DIR})
-include_directories(${LIBUV_INCLUDE_DIRS})
 include_directories(${OPENSSL_INCLUDE_DIR})
-
-link_directories(${LIBUV_LIBRARY_DIRS})
 
 add_executable(mqtt_broker
     mqtt_broker.c
@@ -67,6 +65,18 @@ add_executable(mqtt_test
     mqtt_test.c
 )
 
-target_link_libraries(mqtt_broker ${LIBUV_LIBRARIES})
-target_link_libraries(mqtt_proxy ${LIBUV_LIBRARIES} ${OPENSSL_LIBRARIES} pthread)
-target_link_libraries(mqtt_sn_gateway ${LIBUV_LIBRARIES})
+if(WIN32)
+    target_link_libraries(mqtt_cli_test ws2_32)
+    target_link_libraries(mqtt_sn_cli_test ws2_32)
+    target_link_libraries(mqtt_pub ws2_32)
+    target_link_libraries(mqtt_sub ws2_32)
+    target_link_libraries(mqtt_sn_pub ws2_32)
+    target_link_libraries(mqtt_sn_sub ws2_32)
+    target_link_libraries(mqtt_broker uv ws2_32)
+    target_link_libraries(mqtt_proxy uv ${OPENSSL_LIBRARIES} ws2_32)
+    target_link_libraries(mqtt_sn_gateway uv ws2_32)
+else()
+    target_link_libraries(mqtt_broker uv)
+    target_link_libraries(mqtt_proxy uv ${OPENSSL_LIBRARIES} pthread)
+    target_link_libraries(mqtt_sn_gateway uv)
+endif()

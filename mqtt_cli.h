@@ -661,7 +661,11 @@ mqtt_cli_elapsed(mqtt_cli_t *m, uint64_t time) {
 
 #endif /* MQTT_CLI_IMPL */
 
-#ifdef MQTT_CLI_LINUX_PLATFORM
+#ifdef MQTT_CLI_NETWORK_IMPL
+
+#define NETWORK_TCP_BUFF_SIZE 4096
+
+#ifdef __linux__
 
 #include <errno.h>
 #include <fcntl.h>
@@ -673,16 +677,14 @@ mqtt_cli_elapsed(mqtt_cli_t *m, uint64_t time) {
 #include <sys/types.h>
 #include <unistd.h>
 
-#define LINUX_TCP_BUFF_SIZE 4096
-
 typedef struct {
     int fd;
-    char buff[LINUX_TCP_BUFF_SIZE];
-} linux_tcp_network_t;
+    char buff[NETWORK_TCP_BUFF_SIZE];
+} network_tcp_t;
 
 void *
-linux_tcp_connect(const char *host, int port) {
-    linux_tcp_network_t *net;
+network_tcp_connect(const char *host, int port) {
+    network_tcp_t *net;
     struct addrinfo hints, *servinfo, *p;
     char ip[16];
     char portstr[6];
@@ -725,7 +727,7 @@ linux_tcp_connect(const char *host, int port) {
         return 0;
     }
 
-    net = (linux_tcp_network_t *)MQTT_MALLOC(sizeof *net);
+    net = (network_tcp_t *)MQTT_MALLOC(sizeof *net);
     if (!net) {
         close(fd);
         return 0;
@@ -738,12 +740,12 @@ linux_tcp_connect(const char *host, int port) {
 }
 
 ssize_t
-linux_tcp_send(void *net, const void *data, size_t size) {
+network_tcp_send(void *net, const void *data, size_t size) {
     int fd;
     ssize_t nsend, totlen = 0;
     char *buf = (char *)data;
 
-    fd = ((linux_tcp_network_t *)net)->fd;
+    fd = ((network_tcp_t *)net)->fd;
     while ((size_t)totlen != size) {
         nsend = send(fd, buf, size - totlen, 0);
         if (nsend == 0)
@@ -760,11 +762,11 @@ linux_tcp_send(void *net, const void *data, size_t size) {
 }
 
 ssize_t
-linux_tcp_recv(void *net, void *data, size_t size) {
+network_tcp_recv(void *net, void *data, size_t size) {
     int fd;
     ssize_t nrecv;
 
-    fd = ((linux_tcp_network_t *)net)->fd;
+    fd = ((network_tcp_t *)net)->fd;
     nrecv = recv(fd, data, size, 0);
     if (nrecv == 0)
         return -1;
@@ -776,23 +778,199 @@ linux_tcp_recv(void *net, void *data, size_t size) {
     return nrecv;
 }
 
+void
+network_tcp_close(void *net) {
+    int fd;
+
+    fd = ((network_tcp_t *)net)->fd;
+    close(fd);
+    MQTT_FREE(net);
+}
+
+uint64_t
+network_time_now() {
+    struct timeval tv;
+
+    gettimeofday(&tv, 0);
+    return (tv.tv_sec * 1000 + tv.tv_usec / 1000);
+}
+
+#endif /* __linux__ */
+
+#ifdef _WIN32
+
+#include <BaseTsd.h>
+#include <winsock2.h>
+#include <ws2tcpip.h>
+
+typedef SSIZE_T ssize_t;
+
+typedef struct {
+    SOCKET sock;
+    char buff[NETWORK_TCP_BUFF_SIZE];
+} network_tcp_t;
+
+void *
+network_tcp_connect(const char *host, int port) {
+    network_tcp_t *net;
+    struct addrinfo hints, *servinfo, *p;
+    char portstr[6];
+    SOCKET sock;
+    int rc;
+
+    WSADATA wsaData;
+    rc = WSAStartup(MAKEWORD(2, 2), &wsaData);
+    if (rc != 0) {
+        fprintf(stderr, "WSAStartup failed: %d\n", rc);
+        return 0;
+    }
+
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_protocol = IPPROTO_TCP;
+
+    sock = INVALID_SOCKET;
+    snprintf(portstr, sizeof(portstr), "%d", port);
+
+    rc = getaddrinfo(host, portstr, &hints, &servinfo);
+    if (rc != 0) {
+        fprintf(stderr, "getaddrinfo failed: %d\n", rc);
+        WSACleanup();
+        return 0;
+    }
+
+    for (p = servinfo; p != NULL; p = p->ai_next) {
+        sock = socket(p->ai_family, p->ai_socktype, p->ai_protocol);
+        if (sock == INVALID_SOCKET) {
+            fprintf(stderr, "socket failed: %ld\n", WSAGetLastError());
+            continue;
+        }
+
+        rc = connect(sock, p->ai_addr, (int)p->ai_addrlen);
+        if (rc == SOCKET_ERROR) {
+            closesocket(sock);
+            sock = INVALID_SOCKET;
+            continue;
+        }
+        break;
+    }
+
+    freeaddrinfo(servinfo);
+
+    if (sock == INVALID_SOCKET) {
+        fprintf(stderr, "Unable to connect to server!\n");
+        WSACleanup();
+        return 0;
+    }
+
+    u_long mode = 1;
+    rc = ioctlsocket(sock, FIONBIO, &mode);
+    if (rc == SOCKET_ERROR) {
+        fprintf(stderr, "ioctlsocket failed: %ld\n", WSAGetLastError());
+        closesocket(sock);
+        WSACleanup();
+        return 0;
+    }
+
+    net = (network_tcp_t *)malloc(sizeof(network_tcp_t));
+    if (!net) {
+        closesocket(sock);
+        WSACleanup();
+        return 0;
+    }
+    memset(net, 0, sizeof(network_tcp_t));
+
+    net->sock = sock;
+
+    return net;
+}
+
+ssize_t
+network_tcp_send(void *net, const void *data, size_t size) {
+    SOCKET sock;
+    int nsend, totlen = 0;
+    const char *buf = (const char *)data;
+
+    sock = ((network_tcp_t *)net)->sock;
+    while (totlen < (int)size) {
+        nsend = send(sock, buf + totlen, (int)(size - totlen), 0);
+        if (nsend == SOCKET_ERROR) {
+            int err = WSAGetLastError();
+            if (err == WSAEWOULDBLOCK) {
+                continue;
+            }
+            return -1;
+        }
+        if (nsend == 0)
+            return -1;
+        totlen += nsend;
+    }
+    return totlen;
+}
+
+ssize_t
+network_tcp_recv(void *net, void *data, size_t size) {
+    SOCKET sock;
+    int nrecv;
+
+    sock = ((network_tcp_t *)net)->sock;
+    nrecv = recv(sock, (char *)data, (int)size, 0);
+    if (nrecv == 0)
+        return -1;
+    if (nrecv == SOCKET_ERROR) {
+        int err = WSAGetLastError();
+        if (err == WSAEWOULDBLOCK) {
+            return 0;
+        }
+        return -1;
+    }
+    return nrecv;
+}
+
+void
+network_tcp_close(void *net) {
+    SOCKET sock;
+
+    sock = ((network_tcp_t *)net)->sock;
+    if (sock != INVALID_SOCKET) {
+        closesocket(sock);
+    }
+    MQTT_FREE(net);
+
+    WSACleanup();
+}
+
+uint64_t
+network_time_now() {
+    FILETIME ft;
+    GetSystemTimeAsFileTime(&ft);
+    ULARGE_INTEGER ul;
+    ul.LowPart = ft.dwLowDateTime;
+    ul.HighPart = ft.dwHighDateTime;
+
+    return ul.QuadPart / 10000;
+}
+
+#endif /* _WIN32 */
+
 int
-linux_tcp_transfer(void *net, mqtt_str_t *outgoing, mqtt_str_t *incoming) {
+network_tcp_transfer(void *net, mqtt_str_t *outgoing, mqtt_str_t *incoming) {
     char *buff;
     ssize_t nrecv;
 
     if (!mqtt_str_empty(outgoing)) {
         ssize_t nsend;
 
-        nsend = linux_tcp_send(net, outgoing->s, outgoing->n);
+        nsend = network_tcp_send(net, outgoing->s, outgoing->n);
         mqtt_str_free(outgoing);
         if (nsend < 0) {
             return -1;
         }
     }
 
-    buff = ((linux_tcp_network_t *)net)->buff;
-    nrecv = linux_tcp_recv(net, buff, LINUX_TCP_BUFF_SIZE);
+    buff = ((network_tcp_t *)net)->buff;
+    nrecv = network_tcp_recv(net, buff, NETWORK_TCP_BUFF_SIZE);
     if (nrecv < 0) {
         return -1;
     }
@@ -800,21 +978,4 @@ linux_tcp_transfer(void *net, mqtt_str_t *outgoing, mqtt_str_t *incoming) {
     return 0;
 }
 
-void
-linux_tcp_close(void *net) {
-    int fd;
-
-    fd = ((linux_tcp_network_t *)net)->fd;
-    close(fd);
-    MQTT_FREE(net);
-}
-
-uint64_t
-linux_time_now() {
-    struct timeval tv;
-
-    gettimeofday(&tv, 0);
-    return (tv.tv_sec * 1000 + tv.tv_usec / 1000);
-}
-
-#endif /* MQTT_CLI_LINUX_PLATFORM */
+#endif /* MQTT_CLI_NETWORK_IMPL */

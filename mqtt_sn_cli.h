@@ -453,7 +453,7 @@ _handle_packet(mqtt_sn_cli_t *m, mqtt_sn_packet_t *pkt) {
         break;
     case MQTT_SN_REGISTER:
         do {
-            char topic[pkt->v.regist.topic_name.n + 1];
+            char topic[256] = {0};
             strncpy(topic, pkt->v.regist.topic_name.s, pkt->v.regist.topic_name.n);
             _regist_topic_id(m, topic, pkt->v.regist.topic_id, pkt->v.regist.msg_id);
         } while (0);
@@ -816,7 +816,11 @@ mqtt_sn_cli_elapsed(mqtt_sn_cli_t *m, uint64_t time) {
 
 #endif /* MQTT_SN_CLI_IMPL */
 
-#ifdef MQTT_SN_CLI_LINUX_PLATFORM
+#ifdef MQTT_SN_CLI_NETWORK_IMPL
+
+#define NETWORK_UDP_BUFF_SIZE 1024
+
+#ifdef __linux__
 
 #include <arpa/inet.h>
 #include <errno.h>
@@ -829,19 +833,17 @@ mqtt_sn_cli_elapsed(mqtt_sn_cli_t *m, uint64_t time) {
 #include <sys/types.h>
 #include <unistd.h>
 
-#define LINUX_UDP_BUFF_SIZE 1024
-
 typedef struct {
     int fd;
     struct sockaddr to_addr;
     struct sockaddr from_addr;
 
-    char buff[LINUX_UDP_BUFF_SIZE];
-} linux_udp_network_t;
+    char buff[NETWORK_UDP_BUFF_SIZE];
+} network_udp_network_t;
 
 void *
-linux_udp_open(const char *host, int port) {
-    linux_udp_network_t *net;
+network_udp_open(const char *host, int port) {
+    network_udp_network_t *net;
     struct sockaddr_in addr;
     struct timeval timeout = {1, 0};
     int fd;
@@ -865,7 +867,7 @@ linux_udp_open(const char *host, int port) {
         return 0;
     }
 
-    net = (linux_udp_network_t *)MQTT_MALLOC(sizeof *net);
+    net = (network_udp_network_t *)MQTT_MALLOC(sizeof *net);
     if (!net) {
         close(fd);
         return 0;
@@ -878,12 +880,12 @@ linux_udp_open(const char *host, int port) {
 }
 
 int
-linux_udp_set_broadcast(void *net, int port) {
-    linux_udp_network_t *udp;
+network_udp_set_broadcast(void *net, int port) {
+    network_udp_network_t *udp;
     struct sockaddr_in addr;
     int on;
 
-    udp = (linux_udp_network_t *)net;
+    udp = (network_udp_network_t *)net;
 
     on = 1;
     if (setsockopt(udp->fd, SOL_SOCKET, SO_BROADCAST, (char *)&on, sizeof(on)) == -1) {
@@ -901,13 +903,13 @@ linux_udp_set_broadcast(void *net, int port) {
 }
 
 int
-linux_udp_join_multicast(void *net, const char *host, int port) {
-    linux_udp_network_t *udp;
+network_udp_join_multicast(void *net, const char *host, int port) {
+    network_udp_network_t *udp;
     struct sockaddr_in addr;
     struct ip_mreq mreq;
     int on;
 
-    udp = (linux_udp_network_t *)net;
+    udp = (network_udp_network_t *)net;
 
     on = 0;
     if (setsockopt(udp->fd, IPPROTO_IP, IP_MULTICAST_LOOP, (char *)&on, sizeof(on)) == -1) {
@@ -932,37 +934,37 @@ linux_udp_join_multicast(void *net, const char *host, int port) {
 }
 
 void
-linux_udp_set_unicast(void *net, struct sockaddr *addr) {
-    linux_udp_network_t *udp;
+network_udp_set_unicast(void *net, struct sockaddr *addr) {
+    network_udp_network_t *udp;
 
-    udp = (linux_udp_network_t *)net;
+    udp = (network_udp_network_t *)net;
     memcpy(&udp->to_addr, addr, sizeof(struct sockaddr));
 }
 
 struct sockaddr *
-linux_udp_from_address(void *net) {
-    return &((linux_udp_network_t *)net)->from_addr;
+network_udp_from_address(void *net) {
+    return &((network_udp_network_t *)net)->from_addr;
 }
 
 ssize_t
-linux_udp_send(void *net, const void *data, size_t size) {
-    linux_udp_network_t *udp;
+network_udp_send(void *net, const void *data, size_t size) {
+    network_udp_network_t *udp;
     struct sockaddr *addr;
 
-    udp = (linux_udp_network_t *)net;
+    udp = (network_udp_network_t *)net;
     addr = &udp->to_addr;
 
     return sendto(udp->fd, data, size, 0, addr, sizeof(struct sockaddr));
 }
 
 ssize_t
-linux_udp_recv(void *net, void *data, size_t size) {
-    linux_udp_network_t *udp;
+network_udp_recv(void *net, void *data, size_t size) {
+    network_udp_network_t *udp;
     struct sockaddr *addr;
     socklen_t addrlen = sizeof(struct sockaddr);
     ssize_t nrecv;
 
-    udp = (linux_udp_network_t *)net;
+    udp = (network_udp_network_t *)net;
     addr = &udp->from_addr;
 
     nrecv = recvfrom(udp->fd, data, size, 0, addr, &addrlen);
@@ -972,27 +974,230 @@ linux_udp_recv(void *net, void *data, size_t size) {
 }
 
 void
-linux_udp_close(void *net) {
+network_udp_close(void *net) {
     int fd;
 
-    fd = ((linux_udp_network_t *)net)->fd;
+    fd = ((network_udp_network_t *)net)->fd;
 
     close(fd);
     MQTT_FREE(net);
 }
 
+uint64_t
+network_time_now() {
+    struct timeval tv;
+
+    gettimeofday(&tv, 0);
+    return (tv.tv_sec * 1000 + tv.tv_usec / 1000);
+}
+
+#endif /* __linux__ */
+
+#ifdef _WIN32
+
+#include <BaseTsd.h>
+#include <winsock2.h>
+#include <ws2tcpip.h>
+
+typedef SSIZE_T ssize_t;
+
+typedef struct {
+    SOCKET sock;
+    struct sockaddr to_addr;
+    struct sockaddr from_addr;
+
+    char buff[NETWORK_UDP_BUFF_SIZE];
+} network_udp_network_t;
+
+void *
+network_udp_open(const char *host, int port) {
+    network_udp_network_t *net;
+    struct sockaddr_in addr;
+    SOCKET sock;
+    int rc;
+
+    WSADATA wsaData;
+    rc = WSAStartup(MAKEWORD(2, 2), &wsaData);
+    if (rc != 0) {
+        fprintf(stderr, "WSAStartup failed: %d\n", rc);
+        return 0;
+    }
+
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = inet_addr(host);
+    addr.sin_port = htons(port);
+
+    sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (sock == INVALID_SOCKET) {
+        fprintf(stderr, "socket failed: %ld\n", WSAGetLastError());
+        WSACleanup();
+        return 0;
+    }
+
+    DWORD timeout = 1000;
+    setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, (char *)&timeout, sizeof(timeout));
+    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, sizeof(timeout));
+
+    if (bind(sock, (struct sockaddr *)&addr, sizeof(addr)) == SOCKET_ERROR) {
+        fprintf(stderr, "bind failed: %ld\n", WSAGetLastError());
+        closesocket(sock);
+        WSACleanup();
+        return 0;
+    }
+
+    net = (network_udp_network_t *)MQTT_MALLOC(sizeof *net);
+    if (!net) {
+        closesocket(sock);
+        WSACleanup();
+        return 0;
+    }
+    memset(net, 0, sizeof *net);
+
+    net->sock = sock;
+
+    return net;
+}
+
 int
-linux_udp_transfer(void *net, mqtt_str_t *outgoing, mqtt_str_t *incoming) {
-    linux_udp_network_t *udp;
+network_udp_set_broadcast(void *net, int port) {
+    network_udp_network_t *udp;
+    struct sockaddr_in addr;
+    int on;
+
+    udp = (network_udp_network_t *)net;
+
+    on = 1;
+    if (setsockopt(udp->sock, SOL_SOCKET, SO_BROADCAST, (char *)&on, sizeof(on)) == SOCKET_ERROR) {
+        fprintf(stderr, "setsockopt SO_BROADCAST failed: %ld\n", WSAGetLastError());
+        return -1;
+    }
+
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_BROADCAST);
+    addr.sin_port = htons(port);
+    memcpy(&udp->to_addr, &addr, sizeof(addr));
+
+    return 0;
+}
+
+int
+network_udp_join_multicast(void *net, const char *host, int port) {
+    network_udp_network_t *udp;
+    struct sockaddr_in addr;
+    struct ip_mreq mreq;
+    int on;
+
+    udp = (network_udp_network_t *)net;
+
+    on = 0;
+    if (setsockopt(udp->sock, IPPROTO_IP, IP_MULTICAST_LOOP, (char *)&on, sizeof(on)) == SOCKET_ERROR) {
+        fprintf(stderr, "setsockopt IP_MULTICAST_LOOP failed: %ld\n", WSAGetLastError());
+        return -1;
+    }
+
+    mreq.imr_interface.s_addr = htonl(INADDR_ANY);
+    mreq.imr_multiaddr.s_addr = inet_addr(host);
+    if (setsockopt(udp->sock, IPPROTO_IP, IP_ADD_MEMBERSHIP, (char *)&mreq, sizeof(mreq)) == SOCKET_ERROR) {
+        fprintf(stderr, "setsockopt IP_ADD_MEMBERSHIP failed: %ld\n", WSAGetLastError());
+        return -1;
+    }
+
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = inet_addr(host);
+    addr.sin_port = htons(port);
+    memcpy(&udp->to_addr, &addr, sizeof(addr));
+
+    return 0;
+}
+
+void
+network_udp_set_unicast(void *net, struct sockaddr *addr) {
+    network_udp_network_t *udp;
+
+    udp = (network_udp_network_t *)net;
+    memcpy(&udp->to_addr, addr, sizeof(struct sockaddr));
+}
+
+struct sockaddr *
+network_udp_from_address(void *net) {
+    return &((network_udp_network_t *)net)->from_addr;
+}
+
+ssize_t
+network_udp_send(void *net, const void *data, size_t size) {
+    network_udp_network_t *udp;
+    struct sockaddr *addr;
+
+    udp = (network_udp_network_t *)net;
+    addr = &udp->to_addr;
+
+    return sendto(udp->sock, (const char *)data, (int)size, 0, addr, sizeof(struct sockaddr));
+}
+
+ssize_t
+network_udp_recv(void *net, void *data, size_t size) {
+    network_udp_network_t *udp;
+    struct sockaddr *addr;
+    int addrlen = sizeof(struct sockaddr);
+    int nrecv;
+
+    udp = (network_udp_network_t *)net;
+    addr = &udp->from_addr;
+
+    nrecv = recvfrom(udp->sock, (char *)data, (int)size, 0, addr, &addrlen);
+    if (nrecv == SOCKET_ERROR) {
+        int err = WSAGetLastError();
+        if (err == WSAETIMEDOUT || err == WSAEWOULDBLOCK) {
+            nrecv = 0;
+        } else {
+            return -1;
+        }
+    }
+    return nrecv;
+}
+
+void
+network_udp_close(void *net) {
+    SOCKET sock;
+
+    sock = ((network_udp_network_t *)net)->sock;
+
+    if (sock != INVALID_SOCKET) {
+        closesocket(sock);
+    }
+    MQTT_FREE(net);
+
+    WSACleanup();
+}
+
+uint64_t
+network_time_now() {
+    FILETIME ft;
+    GetSystemTimeAsFileTime(&ft);
+    ULARGE_INTEGER ul;
+    ul.LowPart = ft.dwLowDateTime;
+    ul.HighPart = ft.dwHighDateTime;
+
+    return ul.QuadPart / 10000;
+}
+
+#endif /* _WIN32 */
+
+int
+network_udp_transfer(void *net, mqtt_str_t *outgoing, mqtt_str_t *incoming) {
+    network_udp_network_t *udp;
     char *buff;
     ssize_t nrecv;
 
-    udp = (linux_udp_network_t *)net;
+    udp = (network_udp_network_t *)net;
 
     if (!mqtt_str_empty(outgoing)) {
         ssize_t nsend;
 
-        nsend = linux_udp_send(net, outgoing->s, outgoing->n);
+        nsend = network_udp_send(net, outgoing->s, outgoing->n);
         mqtt_str_free(outgoing);
         if (nsend < 0) {
             return -1;
@@ -1000,7 +1205,7 @@ linux_udp_transfer(void *net, mqtt_str_t *outgoing, mqtt_str_t *incoming) {
     }
 
     buff = udp->buff;
-    nrecv = linux_udp_recv(net, buff, LINUX_UDP_BUFF_SIZE);
+    nrecv = network_udp_recv(net, buff, NETWORK_UDP_BUFF_SIZE);
     if (nrecv < 0) {
         return -1;
     }
@@ -1008,12 +1213,4 @@ linux_udp_transfer(void *net, mqtt_str_t *outgoing, mqtt_str_t *incoming) {
     return 0;
 }
 
-uint64_t
-linux_time_now() {
-    struct timeval tv;
-
-    gettimeofday(&tv, 0);
-    return (tv.tv_sec * 1000 + tv.tv_usec / 1000);
-}
-
-#endif /* MQTT_SN_CLI_LINUX_PLATFORM */
+#endif /* MQTT_SN_CLI_NETWORK_IMPL */

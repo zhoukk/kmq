@@ -22,7 +22,7 @@
  * SOFTWARE.
  */
 
-#define MQTT_CLI_LINUX_PLATFORM
+#define MQTT_CLI_NETWORK_IMPL
 #define MQTT_CLI_IMPL
 #include "mqtt_cli.h"
 
@@ -340,7 +340,7 @@ _suback(mqtt_cli_t *m, void *ud, const mqtt_packet_t *pkt) {
 
 static void
 _connack(mqtt_cli_t *m, void *ud, const mqtt_packet_t *pkt) {
-    mqtt_qos_t qoss[topic_count];
+    mqtt_qos_t qoss[128];
     int i;
     (void)ud;
 
@@ -427,7 +427,7 @@ main(int argc, char *argv[]) {
         .ud = 0,
     };
 
-    net = linux_tcp_connect(host, port);
+    net = network_tcp_connect(host, port);
     if (!net) {
         if (!quiet)
             fprintf(stderr, "mqtt broker connect error\n");
@@ -440,22 +440,22 @@ main(int argc, char *argv[]) {
         mqtt_str_t outgoing, incoming;
         uint64_t t1, t2;
 
-        t1 = linux_time_now();
+        t1 = network_time_now();
         mqtt_cli_outgoing(m, &outgoing);
-        if (linux_tcp_transfer(net, &outgoing, &incoming)) {
+        if (network_tcp_transfer(net, &outgoing, &incoming)) {
             break;
         }
         if (mqtt_cli_incoming(m, &incoming)) {
             break;
         }
-        t2 = linux_time_now();
+        t2 = network_time_now();
         if (mqtt_cli_elapsed(m, t2 - t1)) {
             break;
         }
     }
     mqtt_cli_destroy(m);
 
-    linux_tcp_close(net);
+    network_tcp_close(net);
 
     free(host);
     if (client_id)

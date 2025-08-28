@@ -1,4 +1,4 @@
-#define MQTT_CLI_LINUX_PLATFORM
+#define MQTT_CLI_NETWORK_IMPL
 #define MQTT_CLI_IMPL
 #include "mqtt_cli.h"
 
@@ -119,7 +119,7 @@ main(int argc, char *argv[]) {
 
     mqtt_str_from(&message, "hello world");
 
-    net = linux_tcp_connect("127.0.0.1", MQTT_TCP_PORT);
+    net = network_tcp_connect("127.0.0.1", MQTT_TCP_PORT);
     if (!net) {
         exit(EXIT_FAILURE);
     }
@@ -130,22 +130,22 @@ main(int argc, char *argv[]) {
         mqtt_str_t outgoing, incoming;
         uint64_t t1, t2;
 
-        t1 = linux_time_now();
+        t1 = network_time_now();
         mqtt_cli_outgoing(m, &outgoing);
-        if (linux_tcp_transfer(net, &outgoing, &incoming)) {
+        if (network_tcp_transfer(net, &outgoing, &incoming)) {
             break;
         }
         if (mqtt_cli_incoming(m, &incoming)) {
             break;
         }
-        t2 = linux_time_now();
+        t2 = network_time_now();
         if (mqtt_cli_elapsed(m, t2 - t1)) {
             break;
         }
     }
     mqtt_cli_destroy(m);
 
-    linux_tcp_close(net);
+    network_tcp_close(net);
 
     size_t allocated_size = 0, used_size = 0, total_allocations = 0, total_frees = 0;
     double hit_rate = 0;

@@ -1,4 +1,4 @@
-#define MQTT_SN_CLI_LINUX_PLATFORM
+#define MQTT_SN_CLI_NETWORK_IMPL
 #define MQTT_SN_CLI_IMPL
 #include "mqtt_sn_cli.h"
 
@@ -6,7 +6,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/time.h>
 
 static const char *topic = "mqtt-sn/client/test";
 static mqtt_sn_qos_t qos = MQTT_SN_QOS_2;
@@ -20,7 +19,7 @@ _advertise(mqtt_sn_cli_t *m, void *ud, const mqtt_sn_packet_t *pkt) {
 
     state = mqtt_sn_cli_state(m);
     if (MQTT_SN_STATE_DISCONNECTED == state || MQTT_SN_STATE_SEARCHGW == state) {
-        linux_udp_set_unicast(ud, linux_udp_from_address(ud));
+        network_udp_set_unicast(ud, network_udp_from_address(ud));
         mqtt_sn_cli_connect(m);
     }
 }
@@ -37,7 +36,7 @@ _gwinfo(mqtt_sn_cli_t *m, void *ud, const mqtt_sn_packet_t *pkt) {
 
     state = mqtt_sn_cli_state(m);
     if (MQTT_SN_STATE_DISCONNECTED == state || MQTT_SN_STATE_SEARCHGW == state) {
-        linux_udp_set_unicast(ud, linux_udp_from_address(ud));
+        network_udp_set_unicast(ud, network_udp_from_address(ud));
         mqtt_sn_cli_connect(m);
     }
 }
@@ -133,13 +132,13 @@ main(int argc, char *argv[]) {
 
     mqtt_str_from(&message, "hello world");
 
-    net = linux_udp_open("0.0.0.0", MQTT_SN_UDP_PORT);
+    net = network_udp_open("0.0.0.0", MQTT_SN_UDP_PORT);
     if (!net) {
         return EXIT_FAILURE;
     }
     config.ud = net;
 
-    linux_udp_set_broadcast(net, MQTT_SN_UDP_PORT);
+    network_udp_set_broadcast(net, MQTT_SN_UDP_PORT);
     m = mqtt_sn_cli_create(&config);
 
     mqtt_sn_cli_searchgw(m, 1);
@@ -148,15 +147,15 @@ main(int argc, char *argv[]) {
         mqtt_str_t outgoing, incoming;
         uint64_t t1, t2;
 
-        t1 = linux_time_now();
+        t1 = network_time_now();
         mqtt_sn_cli_outgoing(m, &outgoing);
-        if (linux_udp_transfer(net, &outgoing, &incoming)) {
+        if (network_udp_transfer(net, &outgoing, &incoming)) {
             break;
         }
         if (mqtt_sn_cli_incoming(m, &incoming)) {
             break;
         }
-        t2 = linux_time_now();
+        t2 = network_time_now();
         if (mqtt_sn_cli_elapsed(m, t2 - t1)) {
             break;
         }
@@ -164,6 +163,6 @@ main(int argc, char *argv[]) {
 
     mqtt_sn_cli_destroy(m);
 
-    linux_udp_close(net);
+    network_udp_close(net);
     return 0;
 }
