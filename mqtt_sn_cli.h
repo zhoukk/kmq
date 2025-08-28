@@ -301,10 +301,11 @@ _append_padding(mqtt_sn_cli_t *m, mqtt_sn_packet_t *pkt) {
     return 0;
 }
 
-static int rc = _send_puback(mqtt_sn_cli_t * m, mqtt_sn_packet_type_t type, uint16_t packet_id) {
+static int
+_send_puback(mqtt_sn_cli_t *m, mqtt_sn_packet_type_t type, uint16_t packet_id) {
     mqtt_sn_packet_t pkt;
 
-    rc = mqtt_sn_packet_init(&pkt, type);
+    mqtt_sn_packet_init(&pkt, type);
     switch (type) {
     case MQTT_SN_PUBACK:
         pkt.v.puback.msg_id = packet_id;
