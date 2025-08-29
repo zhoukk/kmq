@@ -665,7 +665,7 @@ mqtt_cli_elapsed(mqtt_cli_t *m, uint64_t time) {
 
 #define NETWORK_TCP_BUFF_SIZE 4096
 
-#ifdef __linux__
+#if defined(__unix__) || (defined(__APPLE__) && defined(__MACH__)) || defined(__linux__)
 
 #include <errno.h>
 #include <fcntl.h>
@@ -795,7 +795,7 @@ network_time_now() {
     return (tv.tv_sec * 1000 + tv.tv_usec / 1000);
 }
 
-#endif /* __linux__ */
+#endif /* defined(__unix__) || (defined(__APPLE__) && defined(__MACH__)) || defined(__linux__) */
 
 #ifdef _WIN32
 

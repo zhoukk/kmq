@@ -820,7 +820,7 @@ mqtt_sn_cli_elapsed(mqtt_sn_cli_t *m, uint64_t time) {
 
 #define NETWORK_UDP_BUFF_SIZE 1024
 
-#ifdef __linux__
+#if defined(__unix__) || (defined(__APPLE__) && defined(__MACH__)) || defined(__linux__)
 
 #include <arpa/inet.h>
 #include <errno.h>
@@ -991,7 +991,7 @@ network_time_now() {
     return (tv.tv_sec * 1000 + tv.tv_usec / 1000);
 }
 
-#endif /* __linux__ */
+#endif /* defined(__unix__) || (defined(__APPLE__) && defined(__MACH__)) || defined(__linux__) */
 
 #ifdef _WIN32
 
