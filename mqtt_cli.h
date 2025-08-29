@@ -87,11 +87,9 @@ int mqtt_cli_elapsed(mqtt_cli_t *m, uint64_t time);
 #define MQTT_IMPL
 #include "mqtt.h"
 
-#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L && !defined(__STDC_NO_THREADS__)
-#define MQTT_CLI_C11_THREADS 1
+#if HAVE_C11_THREADS
 #include <threads.h>
 #else
-#define MQTT_CLI_C11_THREADS 0
 #ifdef _WIN32
 #include <windows.h>
 typedef CRITICAL_SECTION mqtt_cli_mutex_t;
@@ -101,7 +99,7 @@ typedef pthread_mutex_t mqtt_cli_mutex_t;
 #endif
 #endif
 
-#if MQTT_CLI_C11_THREADS
+#if HAVE_C11_THREADS
 #define MQTT_CLI_LOCK_INIT(m) mtx_init(&(m), mtx_plain)
 #define MQTT_CLI_LOCK_DESTROY(m) mtx_destroy(&(m))
 #define MQTT_CLI_LOCK(m) mtx_lock(&(m))
@@ -157,7 +155,7 @@ struct mqtt_cli_s {
     uint16_t packet_id;
     mqtt_parser_t parser;
     mqtt_cli_packet_t *padding;
-#if MQTT_CLI_C11_THREADS
+#if HAVE_C11_THREADS
     mtx_t padding_lock;
 #else
     mqtt_cli_mutex_t padding_lock;

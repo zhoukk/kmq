@@ -48,11 +48,9 @@ void mqtt_mempool_stats(mqtt_mempool_t *pool, size_t *allocated_size, size_t *us
 #include <stdlib.h>
 #include <string.h>
 
-#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L && !defined(__STDC_NO_THREADS__)
-#define MQTT_MEMPOOL_C11_THREADS 1
+#if HAVE_C11_THREADS
 #include <threads.h>
 #else
-#define MQTT_MEMPOOL_C11_THREADS 0
 #ifdef _WIN32
 #include <windows.h>
 typedef CRITICAL_SECTION mqtt_mempool_mutex_t;
@@ -62,7 +60,7 @@ typedef pthread_mutex_t mqtt_mempool_mutex_t;
 #endif
 #endif
 
-#if MQTT_MEMPOOL_C11_THREADS
+#if HAVE_C11_THREADS
 #define MQTT_MEMPOOL_LOCK_INIT(m) mtx_init(&(m), mtx_plain)
 #define MQTT_MEMPOOL_LOCK_DESTROY(m) mtx_destroy(&(m))
 #define MQTT_MEMPOOL_LOCK(m) mtx_lock(&(m))
@@ -118,7 +116,7 @@ typedef struct mqtt_mempool_s {
 
     mqtt_mempool_block_t *large_blocks;
 
-#if MQTT_MEMPOOL_C11_THREADS
+#if HAVE_C11_THREADS
     mtx_t mutex;
 #else
     mqtt_mempool_mutex_t mutex;
