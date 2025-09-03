@@ -111,7 +111,7 @@ typedef pthread_mutex_t mqtt_cli_mutex_t;
 #define MQTT_CLI_LOCK(m) EnterCriticalSection(&(m))
 #define MQTT_CLI_UNLOCK(m) LeaveCriticalSection(&(m))
 #else
-#define MQTT_CLI_LOCK_INIT(m) pthread_mutex_init(&(m), NULL)
+#define MQTT_CLI_LOCK_INIT(m) pthread_mutex_init(&(m), 0)
 #define MQTT_CLI_LOCK_DESTROY(m) pthread_mutex_destroy(&(m))
 #define MQTT_CLI_LOCK(m) pthread_mutex_lock(&(m))
 #define MQTT_CLI_UNLOCK(m) pthread_mutex_unlock(&(m))
@@ -661,7 +661,7 @@ mqtt_cli_elapsed(mqtt_cli_t *m, uint64_t time) {
 
 #ifdef MQTT_CLI_NETWORK_IMPL
 
-#define NETWORK_TCP_BUFF_SIZE 4096
+#define NETWORK_BUFF_SIZE 4096
 
 #if defined(__unix__) || (defined(__APPLE__) && defined(__MACH__)) || defined(__linux__)
 
@@ -677,7 +677,7 @@ mqtt_cli_elapsed(mqtt_cli_t *m, uint64_t time) {
 
 typedef struct {
     int fd;
-    char buff[NETWORK_TCP_BUFF_SIZE];
+    char buff[NETWORK_BUFF_SIZE];
 } network_tcp_t;
 
 void *
@@ -805,7 +805,7 @@ typedef SSIZE_T ssize_t;
 
 typedef struct {
     SOCKET sock;
-    char buff[NETWORK_TCP_BUFF_SIZE];
+    char buff[NETWORK_BUFF_SIZE];
 } network_tcp_t;
 
 void *
@@ -838,7 +838,7 @@ network_tcp_connect(const char *host, int port) {
         return 0;
     }
 
-    for (p = servinfo; p != NULL; p = p->ai_next) {
+    for (p = servinfo; p; p = p->ai_next) {
         sock = socket(p->ai_family, p->ai_socktype, p->ai_protocol);
         if (sock == INVALID_SOCKET) {
             fprintf(stderr, "socket failed: %ld\n", WSAGetLastError());
@@ -952,6 +952,206 @@ network_time_now() {
 
 #endif /* _WIN32 */
 
+#ifdef MQTT_CLI_NETWORK_TLS
+
+#include <openssl/bio.h>
+#include <openssl/err.h>
+#include <openssl/ssl.h>
+
+typedef struct {
+    SSL_CTX *ctx;
+    SSL *ssl;
+    BIO *bio;
+
+    char buff[NETWORK_BUFF_SIZE];
+} network_tls_t;
+
+void *
+network_tls_connect(const char *host, int port) {
+    network_tls_t *net;
+    SSL_CTX *ctx;
+    SSL *ssl;
+    BIO *bio;
+    int sock = -1;
+    BIO_ADDRINFO *res;
+    const BIO_ADDRINFO *ai;
+    char portstr[16] = "";
+    struct timeval timeout = {1, 0};
+    int on = 1;
+
+    ctx = SSL_CTX_new(TLS_client_method());
+    if (!ctx) {
+        return 0;
+    }
+
+    // SSL_CTX_set_verify(net->ctx, SSL_VERIFY_PEER, 0);
+
+    if (!SSL_CTX_set_default_verify_paths(ctx)) {
+        SSL_CTX_free(ctx);
+        return 0;
+    }
+
+    if (!SSL_CTX_set_min_proto_version(ctx, TLS1_2_VERSION)) {
+        SSL_CTX_free(ctx);
+        return 0;
+    }
+
+    ssl = SSL_new(ctx);
+    if (!ssl) {
+        SSL_CTX_free(ctx);
+        return 0;
+    }
+
+    sprintf(portstr, "%d", port);
+
+    if (!BIO_lookup_ex(host, portstr, BIO_LOOKUP_CLIENT, AF_INET, SOCK_STREAM, 0, &res)) {
+        SSL_free(ssl);
+        SSL_CTX_free(ctx);
+        return 0;
+    }
+
+    for (ai = res; ai; ai = BIO_ADDRINFO_next(ai)) {
+        sock = BIO_socket(BIO_ADDRINFO_family(ai), SOCK_STREAM, 0, 0);
+        if (sock == -1) {
+            continue;
+        }
+
+        if (!BIO_connect(sock, BIO_ADDRINFO_address(ai), BIO_SOCK_NODELAY)) {
+            BIO_closesocket(sock);
+            sock = -1;
+            continue;
+        }
+        break;
+    }
+
+    BIO_ADDRINFO_free(res);
+
+    if (sock == -1) {
+        SSL_free(ssl);
+        SSL_CTX_free(ctx);
+        return 0;
+    }
+
+    bio = BIO_new(BIO_s_socket());
+    if (!bio) {
+        BIO_closesocket(sock);
+        SSL_free(ssl);
+        SSL_CTX_free(ctx);
+        return 0;
+    }
+
+    BIO_set_fd(bio, sock, BIO_CLOSE);
+
+    SSL_set_bio(ssl, bio, bio);
+
+    if (!SSL_set_tlsext_host_name(ssl, host)) {
+        BIO_closesocket(sock);
+        SSL_free(ssl);
+        SSL_CTX_free(ctx);
+        return 0;
+    }
+
+    if (!SSL_set1_host(ssl, host)) {
+        BIO_closesocket(sock);
+        SSL_free(ssl);
+        SSL_CTX_free(ctx);
+        return 0;
+    }
+
+    if (SSL_connect(ssl) < 1) {
+        if (SSL_get_verify_result(ssl) != X509_V_OK)
+            printf("Verify error: %s\n", X509_verify_cert_error_string(SSL_get_verify_result(ssl)));
+        BIO_closesocket(sock);
+        SSL_free(ssl);
+        SSL_CTX_free(ctx);
+        return 0;
+    }
+
+    setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
+    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+    setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, &on, sizeof(on));
+
+    net = (network_tls_t *)MQTT_MALLOC(sizeof *net);
+    if (!net) {
+        BIO_closesocket(sock);
+        SSL_free(ssl);
+        SSL_CTX_free(ctx);
+        return 0;
+    }
+    memset(net, 0, sizeof *net);
+
+    net->ctx = ctx;
+    net->ssl = ssl;
+    net->bio = bio;
+
+    return net;
+}
+
+ssize_t
+network_tls_send(void *net, const void *data, size_t size) {
+    network_tls_t *tls_net = (network_tls_t *)net;
+
+    ssize_t totlen = 0;
+    char *buf = (char *)data;
+
+    while ((size_t)totlen != size) {
+        ssize_t nsend = SSL_write(tls_net->ssl, buf, size - totlen);
+        if (nsend == 0)
+            return -1;
+        if (nsend == -1) {
+            if (SSL_get_error(tls_net->ssl, 0) == SSL_ERROR_WANT_WRITE)
+                continue;
+            return -1;
+        }
+        totlen += nsend;
+        buf += nsend;
+    }
+    return totlen;
+}
+
+ssize_t
+network_tls_recv(void *net, void *data, size_t size) {
+    network_tls_t *tls_net = (network_tls_t *)net;
+
+    ssize_t nrecv;
+
+    nrecv = SSL_read(tls_net->ssl, data, size);
+    if (nrecv == 0)
+        return -1;
+    if (nrecv == -1) {
+        if (SSL_get_error(tls_net->ssl, 0) == SSL_ERROR_WANT_READ)
+            return 0;
+        return -1;
+    }
+    return nrecv;
+}
+
+int
+network_tls_transfer(void *net, mqtt_str_t *outgoing, mqtt_str_t *incoming) {
+    char *buff;
+    ssize_t nrecv;
+
+    if (!mqtt_str_empty(outgoing)) {
+        ssize_t nsend;
+
+        nsend = network_tls_send(net, outgoing->s, outgoing->n);
+        mqtt_str_free(outgoing);
+        if (nsend < 0) {
+            return -1;
+        }
+    }
+
+    buff = ((network_tls_t *)net)->buff;
+    nrecv = network_tls_recv(net, buff, NETWORK_BUFF_SIZE);
+    if (nrecv < 0) {
+        return -1;
+    }
+    mqtt_str_init(incoming, buff, nrecv);
+    return 0;
+}
+
+#endif // MQTT_CLI_NETWORK_TLS
+
 int
 network_tcp_transfer(void *net, mqtt_str_t *outgoing, mqtt_str_t *incoming) {
     char *buff;
@@ -968,7 +1168,7 @@ network_tcp_transfer(void *net, mqtt_str_t *outgoing, mqtt_str_t *incoming) {
     }
 
     buff = ((network_tcp_t *)net)->buff;
-    nrecv = network_tcp_recv(net, buff, NETWORK_TCP_BUFF_SIZE);
+    nrecv = network_tcp_recv(net, buff, NETWORK_BUFF_SIZE);
     if (nrecv < 0) {
         return -1;
     }
