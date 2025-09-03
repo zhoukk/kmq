@@ -1,4 +1,5 @@
 #define MQTT_CLI_NETWORK_IMPL
+#define MQTT_CLI_NETWORK_TLS
 #define MQTT_CLI_IMPL
 #include "mqtt_cli.h"
 
