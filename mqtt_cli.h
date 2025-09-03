@@ -1126,6 +1126,22 @@ network_tls_recv(void *net, void *data, size_t size) {
     return nrecv;
 }
 
+void
+network_tls_close(void *net) {
+    network_tls_t *tls_net = (network_tls_t *)net;
+
+    if (tls_net->ssl) {
+        SSL_shutdown(tls_net->ssl);
+    }
+    if (tls_net->ssl) {
+        SSL_free(tls_net->ssl);
+    }
+    if (tls_net->ctx) {
+        SSL_CTX_free(tls_net->ctx);
+    }
+    MQTT_FREE(tls_net);
+}
+
 int
 network_tls_transfer(void *net, mqtt_str_t *outgoing, mqtt_str_t *incoming) {
     char *buff;
