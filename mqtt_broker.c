@@ -435,6 +435,9 @@ mqtt_client_send(mqtt_client_t *c, mqtt_packet_t *pkt) {
         rc = uv_write(req, (uv_stream_t *)c->tcp, &buf, 1, _mqtt_on_write);
         if (rc) {
             LOG_W("write: %s", uv_strerror(rc));
+            free(req->data);
+            free(req);
+            mqtt_str_free(&b);
         }
     }
     return rc;
