@@ -1728,15 +1728,15 @@ static inline void
 mqtt_str_dump(const mqtt_str_t *b, void *ud, void (*print)(void *, const char *)) {
     size_t line, lines;
 
-    lines = b->n / 0x10;
+    lines = b->n > 0 ? (b->n - 1) / 0x10 : 0;
     for (line = 0; line <= lines; line++) {
         size_t i, n, idx;
         uint8_t *p;
         char buf[0x100] = {0};
 
-        n = line == lines ? b->n % 0x10 : 0x10;
-        if (n == 0)
-            break;
+        n = b->n - line * 0x10;
+        if (n > 0x10)
+            n = 0x10;
         p = ((uint8_t *)b->s + line * 0x10);
         idx = sprintf(buf, "%08zx: ", line * 0x10);
         for (i = 0; i < 0x10; i++) {
@@ -2933,6 +2933,70 @@ __parse_auth(mqtt_str_t *remaining, mqtt_packet_t *pkt) {
     return 0;
 }
 
+static void
+__process_packet_free(mqtt_packet_t *pkt) {
+    switch (pkt->f.bits.type) {
+    case MQTT_CONNECT:
+        __properties_free(&pkt->v.connect.v5.properties);
+        __properties_free(&pkt->p.connect.v5.will_properties);
+        break;
+    case MQTT_CONNACK:
+        __properties_free(&pkt->v.connack.v5.properties);
+        break;
+    case MQTT_SUBSCRIBE:
+        if (pkt->p.subscribe.topic_filters)
+            MQTT_FREE(pkt->p.subscribe.topic_filters);
+        if (pkt->p.subscribe.options)
+            MQTT_FREE(pkt->p.subscribe.options);
+        __properties_free(&pkt->v.subscribe.v5.properties);
+        break;
+    case MQTT_SUBACK:
+        if (pkt->p.suback.v3.granted)
+            MQTT_FREE(pkt->p.suback.v3.granted);
+        if (pkt->p.suback.v4.return_codes)
+            MQTT_FREE(pkt->p.suback.v4.return_codes);
+        if (pkt->p.suback.v5.reason_codes)
+            MQTT_FREE(pkt->p.suback.v5.reason_codes);
+        __properties_free(&pkt->v.suback.v5.properties);
+        break;
+    case MQTT_UNSUBSCRIBE:
+        if (pkt->p.unsubscribe.topic_filters)
+            MQTT_FREE(pkt->p.unsubscribe.topic_filters);
+        __properties_free(&pkt->v.unsubscribe.v5.properties);
+        break;
+    case MQTT_UNSUBACK:
+        if (pkt->p.unsuback.v5.reason_codes)
+            MQTT_FREE(pkt->p.unsuback.v5.reason_codes);
+        __properties_free(&pkt->v.unsuback.v5.properties);
+        break;
+    case MQTT_PUBLISH:
+        __properties_free(&pkt->v.publish.v5.properties);
+        break;
+    case MQTT_PUBACK:
+        __properties_free(&pkt->v.puback.v5.properties);
+        break;
+    case MQTT_PUBREC:
+        __properties_free(&pkt->v.pubrec.v5.properties);
+        break;
+    case MQTT_PUBREL:
+        __properties_free(&pkt->v.pubrel.v5.properties);
+        break;
+    case MQTT_PUBCOMP:
+        __properties_free(&pkt->v.pubcomp.v5.properties);
+        break;
+    case MQTT_DISCONNECT:
+        __properties_free(&pkt->v.disconnect.v5.properties);
+        break;
+    case MQTT_AUTH:
+        __properties_free(&pkt->v.auth.v5.properties);
+        break;
+    case MQTT_PINGREQ:
+    case MQTT_PINGRESP:
+    case MQTT_RESERVED:
+        break;
+    }
+}
+
 static int
 __process(mqtt_parser_t *parser) {
     mqtt_packet_type_t type;
@@ -2996,10 +3060,12 @@ __process(mqtt_parser_t *parser) {
     default:
         rc = -1;
     }
-    if (rc) {
+    if (rc < 0) {
+        __process_packet_free(pkt);
         return rc;
     }
     if (b.i != b.n) {
+        __process_packet_free(pkt);
         return -1;
     }
     return 1;
