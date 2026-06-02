@@ -398,7 +398,7 @@ mqtt_on_pubrec(mqtt_client_t *c, mqtt_packet_t *req, mqtt_packet_t *res) {
     mqtt_sn_packet_t pkt;
     mqtt_sn_padding_topic_t *t;
 
-    t = _client_find_padding(c->msc, req->v.puback.packet_id);
+    t = _client_find_padding(c->msc, req->v.pubrec.packet_id);
     if (!t)
         return -1;
 

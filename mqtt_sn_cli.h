@@ -185,26 +185,32 @@ _clear_padding(mqtt_sn_cli_t *m) {
         MQTT_FREE(mp);
         mp = next;
     }
+    m->padding = 0;
 }
 
 static int
 _check_padding(mqtt_sn_cli_t *m) {
-    mqtt_sn_cli_packet_t *mp;
+    mqtt_sn_cli_packet_t *mp, **pmp;
     int rc;
 
     rc = 0;
-    mp = m->padding;
-    while (mp) {
+    pmp = &m->padding;
+    while (*pmp) {
+        mp = *pmp;
         if (m->t.now - mp->t_send >= MQTT_SN_CLI_PACKET_TIMEOUT * 1000) {
             if (mp->ttl) {
                 --mp->ttl;
                 mp->wait_ack = 0;
+                pmp = &mp->next;
             } else {
+                *pmp = mp->next;
+                mqtt_str_free(&mp->b);
+                MQTT_FREE(mp);
                 rc = -1;
-                break;
             }
+        } else {
+            pmp = &mp->next;
         }
-        mp = mp->next;
     }
     return rc;
 }
@@ -334,8 +340,9 @@ _regist_topic_id(mqtt_sn_cli_t *m, const char *topic, uint16_t id, uint16_t pack
     if (!t)
         return -1;
 
-    t->topic = MQTT_MALLOC(strlen(topic));
+    t->topic = MQTT_MALLOC(strlen(topic) + 1);
     memcpy(t->topic, topic, strlen(topic));
+    t->topic[strlen(topic)] = '\0';
     t->packet_id = packet_id;
     t->next = 0;
     t->id = id;
@@ -610,7 +617,18 @@ mqtt_sn_cli_create(mqtt_sn_cli_conf_t *config) {
 
 void
 mqtt_sn_cli_destroy(mqtt_sn_cli_t *m) {
+    mqtt_sn_cli_topic_t *t;
+
     _clear_padding(m);
+    t = m->topics;
+    while (t) {
+        mqtt_sn_cli_topic_t *next = t->next;
+        if (t->topic) {
+            MQTT_FREE(t->topic);
+        }
+        MQTT_FREE(t);
+        t = next;
+    }
     mqtt_str_free(&m->client_id);
     mqtt_str_free(&m->lwt.topic);
     mqtt_str_free(&m->lwt.message);

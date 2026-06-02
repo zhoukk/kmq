@@ -1020,8 +1020,25 @@ mqtt_session_create(mqtt_str_t *client_id) {
 static void
 mqtt_session_destroy(mqtt_session_t *s) {
     map_node_t *node, *next;
+    queue_t *qnode, *qnext;
 
     LOG_D("session.%p.destroy %.*s", s, MQTT_STR_PRINT(s->client_id));
+
+    /* Free incoming publications */
+    while (!queue_empty(&s->incoming)) {
+        qnode = queue_head(&s->incoming);
+        mqtt_publication_t *pub = queue_data(qnode, mqtt_publication_t, node);
+        queue_remove(qnode);
+        mqtt_publication_destroy(pub);
+    }
+
+    /* Free outgoing publications */
+    while (!queue_empty(&s->outgoing)) {
+        qnode = queue_head(&s->outgoing);
+        mqtt_publication_t *pub = queue_data(qnode, mqtt_publication_t, node);
+        queue_remove(qnode);
+        mqtt_publication_destroy(pub);
+    }
 
     map_foreach_safe(node, next, &s->sub_m) {
         mqtt_subscription_t *sub;
@@ -1626,7 +1643,7 @@ mqtt_on_unsubscribe(mqtt_client_t *c, mqtt_packet_t *req, mqtt_packet_t *res) {
     }
 
     LOG_I("[%.*s] sending UNSUBACK (id: %" PRIu16 ")", MQTT_STR_PRINT(s->client_id), res->v.unsuback.packet_id);
-    for (i = 0; i < res->p.suback.n; i++) {
+    for (i = 0; i < res->p.unsuback.v5.n; i++) {
         if (req->ver == MQTT_VERSION_5) {
             LOG_I("\trc: 0x%02X %s", res->p.unsuback.v5.reason_codes[i],
                   mqtt_rc_name(res->p.unsuback.v5.reason_codes[i]));
@@ -1814,6 +1831,7 @@ _client_on_close(uv_handle_t *handle) {
     c = (mqtt_client_t *)handle->data;
 
     free(handle);
+
     if (!c) {
         return;
     }

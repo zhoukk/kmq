@@ -197,32 +197,37 @@ _clear_padding(mqtt_cli_t *m) {
         MQTT_FREE(mp);
         mp = next;
     }
-    MQTT_CLI_UNLOCK(m->padding_lock);
     m->padding = 0;
+    MQTT_CLI_UNLOCK(m->padding_lock);
 }
 
 static int
 _check_padding(mqtt_cli_t *m) {
-    mqtt_cli_packet_t *mp;
+    mqtt_cli_packet_t *mp, **pmp;
     int rc;
 
     rc = 0;
 
     MQTT_CLI_LOCK(m->padding_lock);
-    mp = m->padding;
-    while (mp) {
+    pmp = &m->padding;
+    while (*pmp) {
+        mp = *pmp;
         if (mp->ttl > 0 && m->t.now - mp->t_send >= MQTT_CLI_PACKET_TIMEOUT * 1000) {
             if (--mp->ttl > 0) {
                 mp->wait_ack = 0;
                 if (mp->type == MQTT_PUBLISH) {
                     ((mqtt_fixed_header_t *)mp->b.s)->bits.dup = 1;
                 }
+                pmp = &mp->next;
             } else {
+                *pmp = mp->next;
+                mqtt_str_free(&mp->b);
+                MQTT_FREE(mp);
                 rc = -1;
-                break;
             }
+        } else {
+            pmp = &mp->next;
         }
-        mp = mp->next;
     }
     MQTT_CLI_UNLOCK(m->padding_lock);
 
@@ -935,8 +940,6 @@ network_tcp_close(void *net) {
         closesocket(sock);
     }
     MQTT_FREE(net);
-
-    WSACleanup();
 }
 
 uint64_t
