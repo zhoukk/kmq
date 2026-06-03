@@ -1,3 +1,23 @@
+You are a C implementation subagent. Your goal is to implement ONE specific task from the plan.
+
+## Context
+Project: mqk — a lightweight MQTT broker library and toolset.
+Working directory: /Users/zhoukk/k/kmq/
+
+## Task Instructions
+Read the plan below carefully. Implement ONLY the task described. Do NOT implement other tasks.
+
+<plan>
+# MQTT Broker 生产级重构 Implementation Plan
+
+## Task 1: 创建 `mqtt_broker.h` 公共头文件
+
+**Files:**
+- Create: `mqtt_broker.h`
+
+**Step 1: 编写头文件**
+
+```c
 /*
  * mqtt_broker.h — 生产级 MQTT Broker 公共接口
  * 基于 libuv 异步 I/O，支持 MQTT 5.0 / 3.1.1
@@ -15,7 +35,6 @@ extern "C" {
 #include "uv.h"         /* libuv */
 #include <stdint.h>
 #include <stddef.h>
-#include <string.h>
 
 /* ================================================================== */
 /* 配置                                                               */
@@ -88,7 +107,7 @@ typedef struct mqtt_session_s mqtt_session_t;
 /* ================================================================== */
 
 /* 生命周期 */
-int mqtt_broker_create(mqtt_broker_config_t *config, uv_loop_t *loop, mqtt_broker_t *b);
+mqtt_broker_t *mqtt_broker_create(const mqtt_broker_config_t *config, uv_loop_t *loop);
 int            mqtt_broker_start(mqtt_broker_t *b);
 void           mqtt_broker_stop(mqtt_broker_t *b);
 void           mqtt_broker_destroy(mqtt_broker_t *b);
@@ -102,3 +121,70 @@ void mqtt_broker_set_auth_callback(mqtt_broker_t *b, mqtt_broker_auth_callback_t
 #endif
 
 #endif /* _MQTT_BROKER_H_ */
+```
+
+- [ ]
+
+**Step 2: 创建桩实现确保编译通过**
+
+`mqtt_broker.c`（桩）：
+
+```c
+#define MQTT_BROKER_IMPL
+#include "mqtt_broker.h"
+
+mqtt_broker_t *mqtt_broker_create(const mqtt_broker_config_t *config, uv_loop_t *loop) {
+    (void)config; (void)loop;
+    return NULL;
+}
+int mqtt_broker_start(mqtt_broker_t *b) { (void)b; return -1; }
+void mqtt_broker_stop(mqtt_broker_t *b)  { (void)b; }
+void mqtt_broker_destroy(mqtt_broker_t *b){ (void)b; }
+int  mqtt_broker_run(mqtt_broker_t *b)    { (void)b; return 0; }
+void mqtt_broker_set_auth_callback(mqtt_broker_t *b, mqtt_broker_auth_callback_t cb, void *ud) {
+    (void)b; (void)cb; (void)ud;
+}
+```
+
+- [ ]
+
+**Step 3: 编译验证**
+
+```bash
+cd build && cmake .. && make mqtt_broker 2>&1 | grep -i error || echo "OK"
+```
+
+- [ ]
+
+**Step 4: Commit**
+
+```bash
+git add mqtt_broker.h mqtt_broker.c
+git commit -m "init: add mqtt_broker.h public API with stub implementations"
+```
+
+- [ ]
+
+</plan>
+
+## Implementation Rules
+1. Use TDD approach — write the implementation first, then verify with compilation
+2. For C projects: verify with `cd build && cmake .. && make mqtt_broker`
+3. If compilation fails, fix the errors before completing
+4. Commit your work with a descriptive commit message
+5. Report status as: DONE, DONE_WITH_CONCERNS, NEEDS_CONTEXT, or BLOCKED
+6. If you need additional context about the codebase, ASK QUESTIONS before implementing
+
+## Questions You Can Ask
+- What does a specific function do?
+- How is a certain struct used?
+- What's the project's coding style?
+- Any existing patterns I should follow?
+
+## Your Deliverable
+1. Complete implementation per the task specification
+2. Compilation verification (pass)
+3. Git commit
+4. Self-review notes (any concerns, improvements made)
+
+Now implement this task.

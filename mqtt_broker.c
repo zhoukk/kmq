@@ -1,3 +1,8 @@
+#define MQTT_BROKER_IMPL
+#include "mqtt_broker.h"
+
+#include "tls.h"
+
 #define MQTT_IMPL
 #include "mqtt.h"
 
@@ -60,6 +65,7 @@ struct mqtt_client_s {
     queue_t node;
     mqtt_session_t *s;
     mqtt_message_t *lwt;
+    mqtt_broker_t *b;
     int closed;
 };
 
@@ -126,20 +132,29 @@ struct mqtt_broker_s {
     uv_loop_t *loop;
     uv_tcp_t server;
     uv_idle_t idle;
+    uv_timer_t timer;
     mqtt_trie_t *sub_root;
     char *host;
     int port;
     char *auth_type;
     char *auth_api;
-    uint64_t t_now;
+    mqtt_broker_auth_callback_t auth_callback;
+    void *auth_ud;
+    int t_now;
     snowflake_t snowflake;
     queue_t client_q;
     map_t session_m;
     queue_t msg_q;
     queue_t account_q;
+    int max_connections;
+    int connections;
+    size_t max_packet_size;
+    int rate_limit;
+    tls_ctx_t *tls_ctx;
+    int shutdown_pending;
+    int pending_clients;
+    int trie_dump_enabled;
 };
-
-static mqtt_broker_t B = {0};
 
 static void
 _broker_dump(void *ud, const char *str) {
@@ -283,7 +298,7 @@ mqtt_lwt_create(mqtt_session_t *s, mqtt_packet_t *pkt) {
 
 static mqtt_publication_t *
 mqtt_publication_create(mqtt_message_t *msg, uint16_t packet_id, mqtt_qos_t qos, uint8_t retain,
-                        mqtt_publication_state_t state) {
+                        mqtt_publication_state_t state, int t_now) {
     mqtt_publication_t *pub;
 
     pub = (mqtt_publication_t *)malloc(sizeof *pub);
@@ -294,7 +309,7 @@ mqtt_publication_create(mqtt_message_t *msg, uint16_t packet_id, mqtt_qos_t qos,
     pub->qos = qos;
     pub->retain = retain;
     pub->state = state;
-    pub->t_send = B.t_now;
+    pub->t_send = t_now;
 
     return pub;
 }
@@ -365,7 +380,7 @@ mqtt_session_outgoing_discard(mqtt_session_t *s, uint16_t packet_id, mqtt_public
 }
 
 static int
-mqtt_session_outgoing_update(mqtt_session_t *s, uint16_t packet_id, mqtt_publication_state_t state,
+mqtt_session_outgoing_update(mqtt_broker_t *b, mqtt_session_t *s, uint16_t packet_id, mqtt_publication_state_t state,
                              mqtt_publication_state_t new_state) {
     queue_t *node;
 
@@ -375,7 +390,7 @@ mqtt_session_outgoing_update(mqtt_session_t *s, uint16_t packet_id, mqtt_publica
         pub = queue_data(node, mqtt_publication_t, node);
         if (pub->packet_id == packet_id && pub->state == state) {
             pub->state = new_state;
-            pub->t_send = B.t_now;
+            pub->t_send = b->t_now;
             return 0;
         }
     }
@@ -454,7 +469,7 @@ mqtt_session_packet_id_generate(mqtt_session_t *s) {
 }
 
 static void
-mqtt_session_publish(mqtt_session_t *s, mqtt_message_t *msg, mqtt_qos_t qos, uint8_t retain) {
+mqtt_session_publish(mqtt_broker_t *b, mqtt_session_t *s, mqtt_message_t *msg, mqtt_qos_t qos, uint8_t retain) {
     mqtt_client_t *c;
     mqtt_publication_t *pub;
     uint16_t packet_id;
@@ -497,11 +512,11 @@ e:
     case MQTT_QOS_0:
         break;
     case MQTT_QOS_1:
-        pub = mqtt_publication_create(msg, packet_id, qos, retain, MQTT_PUBLICATION_STATE_ACK);
+        pub = mqtt_publication_create(msg, packet_id, qos, retain, MQTT_PUBLICATION_STATE_ACK, b->t_now);
         mqtt_session_outgoing_store(s, pub);
         break;
     case MQTT_QOS_2:
-        pub = mqtt_publication_create(msg, packet_id, qos, retain, MQTT_PUBLICATION_STATE_REC);
+        pub = mqtt_publication_create(msg, packet_id, qos, retain, MQTT_PUBLICATION_STATE_REC, b->t_now);
         mqtt_session_outgoing_store(s, pub);
         break;
     }
@@ -589,12 +604,12 @@ mqtt_trie_find(mqtt_trie_t *trie, mqtt_str_t *topic) {
 }
 
 static void
-mqtt_trie_remove(mqtt_trie_t *trie) {
+mqtt_trie_remove(mqtt_broker_t *b, mqtt_trie_t *trie) {
     do {
         mqtt_trie_t *node;
 
         node = trie->parent;
-        if (!map_empty(&trie->children_m) || !map_empty(&trie->suber_m) || trie->retain || trie == B.sub_root) {
+        if (!map_empty(&trie->children_m) || !map_empty(&trie->suber_m) || trie->retain || trie == b->sub_root) {
             break;
         }
         mqtt_trie_destroy(trie);
@@ -629,7 +644,7 @@ mqtt_trie_has_children(mqtt_trie_t *trie) {
 }
 
 static void
-mqtt_trie_deliver(mqtt_trie_t *trie, mqtt_message_t *msg) {
+mqtt_trie_deliver(mqtt_broker_t *b, mqtt_trie_t *trie, mqtt_message_t *msg) {
     map_node_t *node;
 
     map_foreach(node, &trie->suber_m) {
@@ -638,12 +653,12 @@ mqtt_trie_deliver(mqtt_trie_t *trie, mqtt_message_t *msg) {
 
         suber = map_data(node, mqtt_subscriber_t, node);
         qos = msg->qos < suber->sub->granted_qos ? msg->qos : suber->sub->granted_qos;
-        mqtt_session_publish(suber->s, msg, qos, 0);
+        mqtt_session_publish(b, suber->s, msg, qos, 0);
     }
 }
 
 static void
-mqtt_trie_dispatch(mqtt_trie_t *trie, mqtt_str_t topic_name, mqtt_message_t *msg) {
+mqtt_trie_dispatch(mqtt_broker_t *b, mqtt_trie_t *trie, mqtt_str_t topic_name, mqtt_message_t *msg) {
     mqtt_str_t seg, single, single_sep, multi, *topic;
 
     mqtt_str_from(&single, "+");
@@ -657,31 +672,31 @@ mqtt_trie_dispatch(mqtt_trie_t *trie, mqtt_str_t topic_name, mqtt_message_t *msg
 
         branch = mqtt_trie_find(trie, &seg);
         if (branch) {
-            mqtt_trie_dispatch(branch, *topic, msg);
+            mqtt_trie_dispatch(b, branch, *topic, msg);
             if (!topic->n) {
-                mqtt_trie_deliver(branch, msg);
+                mqtt_trie_deliver(b, branch, msg);
             }
         }
 
         branch = mqtt_trie_find(trie, &single);
         if (branch) {
-            mqtt_trie_dispatch(branch, *topic, msg);
+            mqtt_trie_dispatch(b, branch, *topic, msg);
             if (!topic->n) {
-                mqtt_trie_deliver(branch, msg);
+                mqtt_trie_deliver(b, branch, msg);
             }
         }
 
         branch = mqtt_trie_find(trie, &single_sep);
         if (branch) {
-            mqtt_trie_dispatch(branch, *topic, msg);
+            mqtt_trie_dispatch(b, branch, *topic, msg);
             if (!topic->n) {
-                mqtt_trie_deliver(branch, msg);
+                mqtt_trie_deliver(b, branch, msg);
             }
         }
 
         branch = mqtt_trie_find(trie, &multi);
         if (branch && !mqtt_trie_has_children(branch)) {
-            mqtt_trie_deliver(branch, msg);
+            mqtt_trie_deliver(b, branch, msg);
         }
     }
 }
@@ -785,30 +800,32 @@ _mqtt_session_client_id_cmp(void *a, void *b) {
 }
 
 static void
-mqtt_broker_add_client(mqtt_client_t *c) {
-    queue_insert_tail(&B.client_q, &c->node);
+mqtt_broker_add_client(mqtt_broker_t *b, mqtt_client_t *c) {
+    b->connections++;
+    queue_insert_tail(&b->client_q, &c->node);
 }
 
 static void
-mqtt_broker_remove_client(mqtt_client_t *c) {
+mqtt_broker_remove_client(mqtt_broker_t *b, mqtt_client_t *c) {
+    b->connections--;
     queue_remove(&c->node);
 }
 
 static void
-mqtt_broker_add_session(mqtt_session_t *s) {
-    map_push(&B.session_m, &s->client_id, &s->node);
+mqtt_broker_add_session(mqtt_broker_t *b, mqtt_session_t *s) {
+    map_push(&b->session_m, &s->client_id, &s->node);
 }
 
 static void
-mqtt_broker_remove_session(mqtt_session_t *s) {
-    map_erase(&B.session_m, &s->node);
+mqtt_broker_remove_session(mqtt_broker_t *b, mqtt_session_t *s) {
+    map_erase(&b->session_m, &s->node);
 }
 
 static mqtt_session_t *
-mqtt_broker_find_session(mqtt_str_t *client_id) {
+mqtt_broker_find_session(mqtt_broker_t *b, mqtt_str_t *client_id) {
     map_node_t *node;
 
-    node = map_find(&B.session_m, client_id);
+    node = map_find(&b->session_m, client_id);
     if (node) {
         return map_data(node, mqtt_session_t, node);
     }
@@ -816,7 +833,7 @@ mqtt_broker_find_session(mqtt_str_t *client_id) {
 }
 
 static void
-mqtt_broker_subscribe(mqtt_session_t *s, mqtt_subscription_t *sub) {
+mqtt_broker_subscribe(mqtt_broker_t *b, mqtt_session_t *s, mqtt_subscription_t *sub) {
     mqtt_str_t topic;
     mqtt_str_t seg;
     mqtt_trie_t *trie;
@@ -824,7 +841,7 @@ mqtt_broker_subscribe(mqtt_session_t *s, mqtt_subscription_t *sub) {
 
     topic = sub->topic_filter;
 
-    trie = B.sub_root;
+    trie = b->sub_root;
     while ((seg = mqtt_topic_segment(&topic)).n && trie) {
         mqtt_trie_t *branch;
 
@@ -842,15 +859,17 @@ mqtt_broker_subscribe(mqtt_session_t *s, mqtt_subscription_t *sub) {
 
         if (trie->retain) {
             mqtt_qos_t qos = sub->granted_qos < trie->retain->qos ? sub->granted_qos : trie->retain->qos;
-            mqtt_session_publish(s, trie->retain, qos, 1);
+            mqtt_session_publish(b, s, trie->retain, qos, 1);
         }
     }
 
-    mqtt_trie_dump(B.sub_root, 0);
+    if (b->trie_dump_enabled) {
+        mqtt_trie_dump(b->sub_root, 0);
+    }
 }
 
 static mqtt_qos_t
-mqtt_session_subscribe(mqtt_session_t *s, mqtt_str_t *topic_filter, mqtt_qos_t requested_qos) {
+mqtt_session_subscribe(mqtt_broker_t *b, mqtt_session_t *s, mqtt_str_t *topic_filter, mqtt_qos_t requested_qos) {
     map_node_t *node;
     mqtt_subscription_t *sub;
 
@@ -863,12 +882,12 @@ mqtt_session_subscribe(mqtt_session_t *s, mqtt_str_t *topic_filter, mqtt_qos_t r
         map_push(&s->sub_m, &sub->topic_filter, &sub->node);
     }
 
-    mqtt_broker_subscribe(s, sub);
+    mqtt_broker_subscribe(b, s, sub);
     return sub->granted_qos;
 }
 
 static int
-mqtt_broker_unsubscribe(mqtt_session_t *s, mqtt_str_t *topic_filter) {
+mqtt_broker_unsubscribe(mqtt_broker_t *b, mqtt_session_t *s, mqtt_str_t *topic_filter) {
     mqtt_str_t topic;
     mqtt_str_t seg;
     mqtt_trie_t *sub;
@@ -877,7 +896,7 @@ mqtt_broker_unsubscribe(mqtt_session_t *s, mqtt_str_t *topic_filter) {
     topic = *topic_filter;
     rc = -1;
 
-    sub = B.sub_root;
+    sub = b->sub_root;
     while ((seg = mqtt_topic_segment(&topic)).n && sub) {
         sub = mqtt_trie_find(sub, &seg);
     }
@@ -890,15 +909,17 @@ mqtt_broker_unsubscribe(mqtt_session_t *s, mqtt_str_t *topic_filter) {
             mqtt_subscriber_destroy(suber);
             rc = 0;
         }
-        mqtt_trie_remove(sub);
+        mqtt_trie_remove(b, sub);
     }
 
-    mqtt_trie_dump(B.sub_root, 0);
+    if (b->trie_dump_enabled) {
+        mqtt_trie_dump(b->sub_root, 0);
+    }
     return rc;
 }
 
 static int
-mqtt_session_unsubscribe(mqtt_session_t *s, mqtt_str_t *topic_filter) {
+mqtt_session_unsubscribe(mqtt_broker_t *b, mqtt_session_t *s, mqtt_str_t *topic_filter) {
     map_node_t *node;
 
     node = map_find(&s->sub_m, topic_filter);
@@ -909,19 +930,19 @@ mqtt_session_unsubscribe(mqtt_session_t *s, mqtt_str_t *topic_filter) {
         map_erase(&s->sub_m, node);
         mqtt_subscription_destroy(sub);
 
-        return mqtt_broker_unsubscribe(s, topic_filter);
+        return mqtt_broker_unsubscribe(b, s, topic_filter);
     }
     return -1;
 }
 
 static void
-mqtt_broker_retain(mqtt_message_t *msg) {
+mqtt_broker_retain(mqtt_broker_t *b, mqtt_message_t *msg) {
     mqtt_str_t topic;
     mqtt_str_t seg;
     mqtt_trie_t *trie;
 
     topic = msg->topic_name;
-    trie = B.sub_root;
+    trie = b->sub_root;
     while ((seg = mqtt_topic_segment(&topic)).n) {
         mqtt_trie_t *branch;
 
@@ -940,41 +961,44 @@ mqtt_broker_retain(mqtt_message_t *msg) {
         mqtt_message_add_ref(msg);
         trie->retain = msg;
     } else {
-        mqtt_trie_remove(trie);
+        mqtt_trie_remove(b, trie);
     }
-    mqtt_trie_dump(B.sub_root, 0);
+    if (b->trie_dump_enabled) {
+        mqtt_trie_dump(b->sub_root, 0);
+    }
 }
 
 static void
 _mqtt_on_idle(uv_idle_t *handle) {
+    mqtt_broker_t *b = handle->data;
     mqtt_message_t *msg;
     queue_t *node;
     (void)handle;
 
-    if (queue_empty(&B.msg_q)) {
-        uv_idle_stop(&B.idle);
+    if (queue_empty(&b->msg_q)) {
+        uv_idle_stop(&b->idle);
         return;
     }
 
-    node = queue_head(&B.msg_q);
+    node = queue_head(&b->msg_q);
     queue_remove(node);
     msg = queue_data(node, mqtt_message_t, node);
 
     if (msg->retain) {
-        mqtt_broker_retain(msg);
+        mqtt_broker_retain(b, msg);
     }
-    mqtt_trie_dispatch(B.sub_root, msg->topic_name, msg);
+    mqtt_trie_dispatch(b, b->sub_root, msg->topic_name, msg);
     mqtt_message_destroy(msg);
 }
 
 static void
-mqtt_broker_dispatch(mqtt_message_t *msg) {
+mqtt_broker_dispatch(mqtt_broker_t *b, mqtt_message_t *msg) {
     int empty;
 
-    empty = queue_empty(&B.msg_q);
-    queue_insert_tail(&B.msg_q, &msg->node);
+    empty = queue_empty(&b->msg_q);
+    queue_insert_tail(&b->msg_q, &msg->node);
     if (empty) {
-        uv_idle_start(&B.idle, _mqtt_on_idle);
+        uv_idle_start(&b->idle, _mqtt_on_idle);
     }
 }
 
@@ -1018,7 +1042,7 @@ mqtt_session_create(mqtt_str_t *client_id) {
 }
 
 static void
-mqtt_session_destroy(mqtt_session_t *s) {
+mqtt_session_destroy(mqtt_broker_t *b, mqtt_session_t *s) {
     queue_t *qnode;
     map_node_t *node, *next;
 
@@ -1044,7 +1068,7 @@ mqtt_session_destroy(mqtt_session_t *s) {
         mqtt_subscription_t *sub;
 
         sub = map_data(node, mqtt_subscription_t, node);
-        mqtt_broker_unsubscribe(s, &sub->topic_filter);
+        mqtt_broker_unsubscribe(b, s, &sub->topic_filter);
         map_erase(&s->sub_m, node);
         mqtt_subscription_destroy(sub);
     }
@@ -1053,21 +1077,21 @@ mqtt_session_destroy(mqtt_session_t *s) {
 }
 
 static void
-mqtt_client_id_generate(mqtt_str_t *client_id) {
+mqtt_client_id_generate(mqtt_broker_t *b, mqtt_str_t *client_id) {
     long id;
 
     client_id->s = (char *)malloc(SNOWFLAKE_ID_LEN + 1);
-    id = snowflake_id(&B.snowflake);
+    id = snowflake_id(&b->snowflake);
     sprintf(client_id->s, "%ld", id);
     client_id->s[SNOWFLAKE_ID_LEN] = '\0';
     client_id->n = SNOWFLAKE_ID_LEN;
 }
 
 static int
-_authenticate_from_config(mqtt_p_connect_t *connect) {
+_authenticate_from_config(mqtt_broker_t *b, mqtt_p_connect_t *connect) {
     queue_t *node;
 
-    queue_foreach(node, &B.account_q) {
+    queue_foreach(node, &b->account_q) {
         mqtt_account_t *acc;
 
         acc = queue_data(node, mqtt_account_t, node);
@@ -1160,7 +1184,7 @@ _tcp_recv(int fd, void *data, size_t size) {
 }
 
 static int
-_authenticate_from_httpapi(mqtt_p_connect_t *connect) {
+_authenticate_from_httpapi(mqtt_broker_t *b, mqtt_p_connect_t *connect) {
     char buf[4096] = {0};
     int ret_status = 401;
 
@@ -1174,7 +1198,7 @@ _authenticate_from_httpapi(mqtt_p_connect_t *connect) {
     http_request_t req;
 
     http_request_init(&req);
-    http_url_parse(&req.url, B.auth_api);
+    http_url_parse(&req.url, b->auth_api);
     http_request_set_method(&req, "POST");
     http_request_set_header(&req, "Content-Type", "application/json");
     http_request_set_body(&req, req_body);
@@ -1183,7 +1207,7 @@ _authenticate_from_httpapi(mqtt_p_connect_t *connect) {
     int fd = _tcp_connect(req.url.host, req.url.port);
     if (-1 == fd) {
         http_request_unit(&req);
-        LOG_W("can not connect to auth api:%s", B.auth_api);
+        LOG_W("can not connect to auth api:%s", b->auth_api);
         return -1;
     }
 
@@ -1215,18 +1239,19 @@ _authenticate_from_httpapi(mqtt_p_connect_t *connect) {
 }
 
 static int
-mqtt_client_authenticate(mqtt_p_connect_t *connect) {
-    if (!B.auth_type) {
+mqtt_client_authenticate(mqtt_broker_t *b, mqtt_client_t *c, mqtt_p_connect_t *connect) {
+    (void)c;
+    if (!b->auth_type) {
         return 0;
     }
-    if (!strcmp(B.auth_type, "config"))
-        return _authenticate_from_config(connect);
+    if (!strcmp(b->auth_type, "config"))
+        return _authenticate_from_config(b, connect);
     else
-        return _authenticate_from_httpapi(connect);
+        return _authenticate_from_httpapi(b, connect);
 }
 
 static int
-mqtt_on_connect(mqtt_client_t *c, mqtt_packet_t *req, mqtt_packet_t *res) {
+mqtt_on_connect(mqtt_broker_t *b, mqtt_client_t *c, mqtt_packet_t *req, mqtt_packet_t *res) {
     mqtt_str_t client_id = MQTT_STR_INITIALIZER;
     mqtt_session_t *s;
 
@@ -1266,7 +1291,7 @@ mqtt_on_connect(mqtt_client_t *c, mqtt_packet_t *req, mqtt_packet_t *res) {
     }
 
     // authenticate
-    if (mqtt_client_authenticate(&req->p.connect) != 0) {
+    if (mqtt_client_authenticate(b, c, &req->p.connect) != 0) {
         res->v.connack.v3.return_code = MQTT_CRC_REFUSED_BAD_USERNAME_PASSWORD;
         res->v.connack.v4.return_code = MQTT_CRC_REFUSED_BAD_USERNAME_PASSWORD;
         res->v.connack.v5.reason_code = MQTT_RC_BAD_USERNAME_OR_PASSWORD;
@@ -1276,7 +1301,7 @@ mqtt_on_connect(mqtt_client_t *c, mqtt_packet_t *req, mqtt_packet_t *res) {
     s = 0;
     if (req->p.connect.client_id.n > 0) {
         mqtt_str_copy(&client_id, &req->p.connect.client_id);
-        s = mqtt_broker_find_session(&client_id);
+        s = mqtt_broker_find_session(b, &client_id);
         if (s) {
             if (s->c) {
                 LOG_D("client.%p.kick", s->c);
@@ -1296,19 +1321,19 @@ mqtt_on_connect(mqtt_client_t *c, mqtt_packet_t *req, mqtt_packet_t *res) {
                     break;
                 }
             } else {
-                mqtt_broker_remove_session(s);
-                mqtt_session_destroy(s);
+                mqtt_broker_remove_session(b, s);
+                mqtt_session_destroy(b, s);
                 s = 0;
             }
         }
     } else {
-        mqtt_client_id_generate(&client_id);
+        mqtt_client_id_generate(b, &client_id);
     }
 
     if (!s) {
         s = mqtt_session_create(&client_id);
         if (s) {
-            mqtt_broker_add_session(s);
+            mqtt_broker_add_session(b, s);
         }
     }
     if (!s) {
@@ -1368,7 +1393,8 @@ e:
 }
 
 static int
-mqtt_on_auth(mqtt_client_t *c, mqtt_packet_t *req, mqtt_packet_t *res) {
+mqtt_on_auth(mqtt_broker_t *b, mqtt_client_t *c, mqtt_packet_t *req, mqtt_packet_t *res) {
+    (void)b;
     (void)c;
     (void)req;
     (void)res;
@@ -1377,7 +1403,7 @@ mqtt_on_auth(mqtt_client_t *c, mqtt_packet_t *req, mqtt_packet_t *res) {
 }
 
 static int
-mqtt_on_publish(mqtt_client_t *c, mqtt_packet_t *req, mqtt_packet_t *res) {
+mqtt_on_publish(mqtt_broker_t *b, mqtt_client_t *c, mqtt_packet_t *req, mqtt_packet_t *res) {
     mqtt_session_t *s;
     mqtt_message_t *msg;
     uint8_t dup;
@@ -1411,7 +1437,7 @@ mqtt_on_publish(mqtt_client_t *c, mqtt_packet_t *req, mqtt_packet_t *res) {
     }
 
     if (!dup) {
-        mqtt_broker_dispatch(msg);
+        mqtt_broker_dispatch(b, msg);
     }
 
     switch (req->f.bits.qos) {
@@ -1429,7 +1455,7 @@ mqtt_on_publish(mqtt_client_t *c, mqtt_packet_t *req, mqtt_packet_t *res) {
             mqtt_publication_t *pub;
 
             pub = mqtt_publication_create(msg, req->v.publish.packet_id, msg->qos, msg->retain,
-                                          MQTT_PUBLICATION_STATE_REL);
+                                          MQTT_PUBLICATION_STATE_REL, b->t_now);
             mqtt_session_incoming_store(s, pub);
         }
         LOG_I("[%.*s] sending PUBREC (id: %" PRIu16 ")", MQTT_STR_PRINT(s->client_id), res->v.pubrec.packet_id);
@@ -1439,7 +1465,8 @@ mqtt_on_publish(mqtt_client_t *c, mqtt_packet_t *req, mqtt_packet_t *res) {
 }
 
 static int
-mqtt_on_puback(mqtt_client_t *c, mqtt_packet_t *req, mqtt_packet_t *res) {
+mqtt_on_puback(mqtt_broker_t *b, mqtt_client_t *c, mqtt_packet_t *req, mqtt_packet_t *res) {
+    (void)b;
     mqtt_session_t *s;
     (void)res;
 
@@ -1464,7 +1491,7 @@ mqtt_on_puback(mqtt_client_t *c, mqtt_packet_t *req, mqtt_packet_t *res) {
 }
 
 static int
-mqtt_on_pubrec(mqtt_client_t *c, mqtt_packet_t *req, mqtt_packet_t *res) {
+mqtt_on_pubrec(mqtt_broker_t *b, mqtt_client_t *c, mqtt_packet_t *req, mqtt_packet_t *res) {
     mqtt_session_t *s;
 
     s = c->s;
@@ -1486,7 +1513,7 @@ mqtt_on_pubrec(mqtt_client_t *c, mqtt_packet_t *req, mqtt_packet_t *res) {
     res->f.bits.type = MQTT_PUBREL;
     res->v.pubrel.packet_id = req->v.pubrec.packet_id;
 
-    if (mqtt_session_outgoing_update(s, req->v.pubrec.packet_id, MQTT_PUBLICATION_STATE_REC,
+    if (mqtt_session_outgoing_update(b, s, req->v.pubrec.packet_id, MQTT_PUBLICATION_STATE_REC,
                                      MQTT_PUBLICATION_STATE_COMP) &&
         req->ver == MQTT_VERSION_5) {
         res->v.pubrel.v5.reason_code = MQTT_RC_PACKET_IDENTIFIER_NOT_FOUND;
@@ -1497,7 +1524,8 @@ mqtt_on_pubrec(mqtt_client_t *c, mqtt_packet_t *req, mqtt_packet_t *res) {
 }
 
 static int
-mqtt_on_pubrel(mqtt_client_t *c, mqtt_packet_t *req, mqtt_packet_t *res) {
+mqtt_on_pubrel(mqtt_broker_t *b, mqtt_client_t *c, mqtt_packet_t *req, mqtt_packet_t *res) {
+    (void)b;
     mqtt_session_t *s;
 
     s = c->s;
@@ -1528,7 +1556,8 @@ mqtt_on_pubrel(mqtt_client_t *c, mqtt_packet_t *req, mqtt_packet_t *res) {
 }
 
 static int
-mqtt_on_pubcomp(mqtt_client_t *c, mqtt_packet_t *req, mqtt_packet_t *res) {
+mqtt_on_pubcomp(mqtt_broker_t *b, mqtt_client_t *c, mqtt_packet_t *req, mqtt_packet_t *res) {
+    (void)b;
     mqtt_session_t *s;
     (void)res;
 
@@ -1553,7 +1582,7 @@ mqtt_on_pubcomp(mqtt_client_t *c, mqtt_packet_t *req, mqtt_packet_t *res) {
 }
 
 static int
-mqtt_on_subscribe(mqtt_client_t *c, mqtt_packet_t *req, mqtt_packet_t *res) {
+mqtt_on_subscribe(mqtt_broker_t *b, mqtt_client_t *c, mqtt_packet_t *req, mqtt_packet_t *res) {
     mqtt_session_t *s;
     int i;
 
@@ -1575,7 +1604,7 @@ mqtt_on_subscribe(mqtt_client_t *c, mqtt_packet_t *req, mqtt_packet_t *res) {
         requested_qos = req->p.subscribe.options[i].bits.qos;
         LOG_I("\ttopic_filter: %.*s, qos: %d", MQTT_STR_PRINT(topic_filter), requested_qos);
 
-        granted_qos = mqtt_session_subscribe(c->s, &topic_filter, requested_qos);
+        granted_qos = mqtt_session_subscribe(b, c->s, &topic_filter, requested_qos);
 
         switch (req->ver) {
         case MQTT_VERSION_3:
@@ -1613,7 +1642,7 @@ mqtt_on_subscribe(mqtt_client_t *c, mqtt_packet_t *req, mqtt_packet_t *res) {
 }
 
 static int
-mqtt_on_unsubscribe(mqtt_client_t *c, mqtt_packet_t *req, mqtt_packet_t *res) {
+mqtt_on_unsubscribe(mqtt_broker_t *b, mqtt_client_t *c, mqtt_packet_t *req, mqtt_packet_t *res) {
     mqtt_session_t *s;
     int i;
 
@@ -1633,7 +1662,7 @@ mqtt_on_unsubscribe(mqtt_client_t *c, mqtt_packet_t *req, mqtt_packet_t *res) {
 
         LOG_I("\ttopic_filter: %.*s", MQTT_STR_PRINT(topic_filter));
 
-        rc = mqtt_session_unsubscribe(c->s, &topic_filter);
+        rc = mqtt_session_unsubscribe(b, c->s, &topic_filter);
         if (req->ver == MQTT_VERSION_5) {
             res->p.unsuback.v5.reason_codes[i] = rc ? MQTT_RC_NO_SUBSCRIPTION_EXISTED : MQTT_RC_SUCCESS;
         }
@@ -1654,7 +1683,8 @@ mqtt_on_unsubscribe(mqtt_client_t *c, mqtt_packet_t *req, mqtt_packet_t *res) {
 }
 
 static int
-mqtt_on_pingreq(mqtt_client_t *c, mqtt_packet_t *req, mqtt_packet_t *res) {
+mqtt_on_pingreq(mqtt_broker_t *b, mqtt_client_t *c, mqtt_packet_t *req, mqtt_packet_t *res) {
+    (void)b;
     mqtt_session_t *s;
     (void)req;
 
@@ -1671,7 +1701,8 @@ mqtt_on_pingreq(mqtt_client_t *c, mqtt_packet_t *req, mqtt_packet_t *res) {
 }
 
 static int
-mqtt_on_disconnect(mqtt_client_t *c, mqtt_packet_t *req, mqtt_packet_t *res) {
+mqtt_on_disconnect(mqtt_broker_t *b, mqtt_client_t *c, mqtt_packet_t *req, mqtt_packet_t *res) {
+    (void)b;
     mqtt_session_t *s;
     (void)res;
 
@@ -1700,42 +1731,42 @@ mqtt_on_disconnect(mqtt_client_t *c, mqtt_packet_t *req, mqtt_packet_t *res) {
 }
 
 static int
-mqtt_client_handle(mqtt_client_t *c, mqtt_packet_t *req, mqtt_packet_t *res) {
+mqtt_client_handle(mqtt_broker_t *b, mqtt_client_t *c, mqtt_packet_t *req, mqtt_packet_t *res) {
     int rc;
 
     switch (req->f.bits.type) {
     case MQTT_CONNECT:
-        rc = mqtt_on_connect(c, req, res);
+        rc = mqtt_on_connect(b, c, req, res);
         break;
     case MQTT_AUTH:
-        rc = mqtt_on_auth(c, req, res);
+        rc = mqtt_on_auth(b, c, req, res);
         break;
     case MQTT_PUBLISH:
-        rc = mqtt_on_publish(c, req, res);
+        rc = mqtt_on_publish(b, c, req, res);
         break;
     case MQTT_PUBACK:
-        rc = mqtt_on_puback(c, req, res);
+        rc = mqtt_on_puback(b, c, req, res);
         break;
     case MQTT_PUBREC:
-        rc = mqtt_on_pubrec(c, req, res);
+        rc = mqtt_on_pubrec(b, c, req, res);
         break;
     case MQTT_PUBREL:
-        rc = mqtt_on_pubrel(c, req, res);
+        rc = mqtt_on_pubrel(b, c, req, res);
         break;
     case MQTT_PUBCOMP:
-        rc = mqtt_on_pubcomp(c, req, res);
+        rc = mqtt_on_pubcomp(b, c, req, res);
         break;
     case MQTT_SUBSCRIBE:
-        rc = mqtt_on_subscribe(c, req, res);
+        rc = mqtt_on_subscribe(b, c, req, res);
         break;
     case MQTT_UNSUBSCRIBE:
-        rc = mqtt_on_unsubscribe(c, req, res);
+        rc = mqtt_on_unsubscribe(b, c, req, res);
         break;
     case MQTT_PINGREQ:
-        rc = mqtt_on_pingreq(c, req, res);
+        rc = mqtt_on_pingreq(b, c, req, res);
         break;
     case MQTT_DISCONNECT:
-        rc = mqtt_on_disconnect(c, req, res);
+        rc = mqtt_on_disconnect(b, c, req, res);
         break;
     case MQTT_RESERVED:
     default:
@@ -1747,6 +1778,7 @@ mqtt_client_handle(mqtt_client_t *c, mqtt_packet_t *req, mqtt_packet_t *res) {
 
 static int
 mqtt_client_data(mqtt_client_t *c, const char *data, ssize_t size) {
+    mqtt_broker_t *b = c->b;
     mqtt_str_t buf;
     mqtt_packet_t req;
     int rc;
@@ -1762,9 +1794,9 @@ mqtt_client_data(mqtt_client_t *c, const char *data, ssize_t size) {
 
         mqtt_packet_init(&res, req.ver, MQTT_RESERVED);
 
-        c->t_last = B.t_now;
+        c->t_last = b->t_now;
 
-        rc = mqtt_client_handle(c, &req, &res);
+        rc = mqtt_client_handle(b, c, &req, &res);
         if (!rc && MQTT_IS_PACKET_TYPE(res.f.bits.type)) {
             rc = mqtt_client_send(c, &res);
         }
@@ -1777,11 +1809,12 @@ mqtt_client_data(mqtt_client_t *c, const char *data, ssize_t size) {
 }
 
 static mqtt_client_t *
-mqtt_client_create(uv_tcp_t *tcp, const char *ip, int port) {
+mqtt_client_create(mqtt_broker_t *b, uv_tcp_t *tcp, const char *ip, int port) {
     mqtt_client_t *c;
 
     c = (mqtt_client_t *)malloc(sizeof *c);
     memset(c, 0, sizeof *c);
+    c->b = b;
 
     mqtt_parser_init(&c->parser);
     strcpy(c->ip, ip);
@@ -1795,6 +1828,7 @@ mqtt_client_create(uv_tcp_t *tcp, const char *ip, int port) {
 
 static void
 mqtt_client_destroy(mqtt_client_t *c) {
+    mqtt_broker_t *b = c->b;
     mqtt_session_t *s;
 
     LOG_D("client.%p.destroy %s:%d", c, c->ip, c->port);
@@ -1804,20 +1838,21 @@ mqtt_client_destroy(mqtt_client_t *c) {
     s = c->s;
     if (s) {
         if (c->clean_session) {
-            mqtt_broker_remove_session(s);
-            mqtt_session_destroy(s);
+            mqtt_broker_remove_session(b, s);
+            mqtt_session_destroy(b, s);
         } else {
             s->c = 0;
         }
     }
+    b->connections--;
     free(c);
 }
 
 static int
-mqtt_client_update(mqtt_client_t *c) {
+mqtt_client_update(mqtt_broker_t *b, mqtt_client_t *c) {
     if (c->keep_alive > 0) {
         uint64_t expired = c->keep_alive * 1.5;
-        if (B.t_now - c->t_last > expired) {
+        if (b->t_now - c->t_last > expired) {
             return -1;
         }
     }
@@ -1826,6 +1861,7 @@ mqtt_client_update(mqtt_client_t *c) {
 
 static void
 _client_on_close(uv_handle_t *handle) {
+    mqtt_broker_t *b;
     mqtt_client_t *c;
 
     c = (mqtt_client_t *)handle->data;
@@ -1835,10 +1871,11 @@ _client_on_close(uv_handle_t *handle) {
     if (!c) {
         return;
     }
+    b = c->b;
     if (c->lwt) {
-        mqtt_broker_dispatch(c->lwt);
+        mqtt_broker_dispatch(b, c->lwt);
     }
-    mqtt_broker_remove_client(c);
+    mqtt_broker_remove_client(b, c);
     mqtt_client_destroy(c);
 }
 
@@ -1878,6 +1915,7 @@ _client_on_alloc(uv_handle_t *handle, size_t suggested_size, uv_buf_t *buf) {
 
 static void
 _broker_on_connection(uv_stream_t *server, int status) {
+    mqtt_broker_t *b = server->loop->data;
     uv_tcp_t *tcp;
     mqtt_client_t *c;
     struct sockaddr addr;
@@ -1904,22 +1942,22 @@ _broker_on_connection(uv_stream_t *server, int status) {
     uv_ip4_name((struct sockaddr_in *)&addr, ip, sizeof(ip));
     port = ntohs(((struct sockaddr_in *)&addr)->sin_port);
 
-    c = mqtt_client_create(tcp, ip, port);
-    mqtt_broker_add_client(c);
+    c = mqtt_client_create(b, tcp, ip, port);
+    mqtt_broker_add_client(b, c);
 }
 
 static void
 _broker_on_timer(uv_timer_t *handle) {
+    mqtt_broker_t *b = handle->data;
     queue_t *node;
-    (void)handle;
 
-    B.t_now++;
-    LOG_UPDATE(B.t_now);
-    queue_foreach(node, &B.client_q) {
+    b->t_now++;
+    LOG_UPDATE(b->t_now);
+    queue_foreach(node, &b->client_q) {
         mqtt_client_t *c;
 
         c = queue_data(node, mqtt_client_t, node);
-        if (!c->closed && mqtt_client_update(c)) {
+        if (!c->closed && mqtt_client_update(b, c)) {
             LOG_D("client.%p.timeout", c);
             mqtt_client_shutdown(c);
         }
@@ -1928,6 +1966,7 @@ _broker_on_timer(uv_timer_t *handle) {
 
 static int
 _broker_config(void *ud, const char *section, const char *key, const char *value) {
+    mqtt_broker_t *b = (mqtt_broker_t *)ud;
     LOG_D("[%s] %s = %s", section, key, value);
 
     if (!value) {
@@ -1955,17 +1994,17 @@ _broker_config(void *ud, const char *section, const char *key, const char *value
 
     if (!strcmp(section, "net")) {
         if (!strcmp(key, "host")) {
-            B.host = strdup(value);
+            b->host = strdup(value);
         } else if (!strcmp(key, "port")) {
-            B.port = atoi(value);
+            b->port = atoi(value);
         }
     }
 
     if (!strcmp(section, "auth")) {
         if (!strcmp(key, "type")) {
-            B.auth_type = strdup(value);
+            b->auth_type = strdup(value);
         } else if (!strcmp(key, "api")) {
-            B.auth_api = strdup(value);
+            b->auth_api = strdup(value);
         }
     }
 
@@ -1980,73 +2019,166 @@ _broker_config(void *ud, const char *section, const char *key, const char *value
         mqtt_str_dup(&acc->client_id, client_id + 1);
         mqtt_str_dup_n(&acc->password, value, client_id - value);
 
-        queue_insert_tail(&B.account_q, &acc->node);
+        queue_insert_tail(&b->account_q, &acc->node);
     }
 
     return 0;
 }
 
-static int
-mqtt_broker_init(uv_loop_t *loop, int argc, char *argv[]) {
-    B.loop = loop;
-    B.t_now = 0;
-    B.host = "0.0.0.0";
-    B.port = 1883;
+int
+mqtt_broker_create(mqtt_broker_config_t *config, uv_loop_t *loop, mqtt_broker_t *b) {
+    b->loop = loop;
+    b->t_now = 0;
+    b->host = config->host ? strdup(config->host) : strdup("0.0.0.0");
+    b->port = config->port ? config->port : MQTT_BROKER_DEFAULT_PORT;
+    b->max_connections = config->max_connections ? config->max_connections : MQTT_BROKER_DEFAULT_MAX_CONN;
+    b->max_packet_size = config->max_packet_size ? config->max_packet_size : MQTT_BROKER_DEFAULT_MAX_PACKET_SIZE;
+    b->rate_limit = config->rate_limit;
 
-    queue_init(&B.client_q);
-    queue_init(&B.msg_q);
-    queue_init(&B.account_q);
-    map_init(&B.session_m, _mqtt_session_client_id_key, _mqtt_session_client_id_cmp);
-    B.sub_root = mqtt_trie_create(0, 0);
+    queue_init(&b->client_q);
+    queue_init(&b->msg_q);
+    queue_init(&b->account_q);
+    map_init(&b->session_m, _mqtt_session_client_id_key, _mqtt_session_client_id_cmp);
+    b->sub_root = mqtt_trie_create(0, 0);
 
-    if (argc > 1 && ini_parse(argv[1], _broker_config, 0)) {
-        LOG_E("config file %s parse error", argv[1]);
+    if (config->auth_type) {
+        b->auth_type = strdup(config->auth_type);
+    }
+    if (config->auth_api) {
+        b->auth_api = strdup(config->auth_api);
+    }
+    b->auth_ud = config->ud;
+
+    if (config->users && config->user_count > 0) {
+        for (int i = 0; i < config->user_count; i++) {
+            mqtt_account_t *acc = (mqtt_account_t *)malloc(sizeof *acc);
+            mqtt_str_dup(&acc->username, config->users[i].user ? config->users[i].user : "");
+            mqtt_str_dup(&acc->password, config->users[i].pass ? config->users[i].pass : "");
+            mqtt_str_dup(&acc->client_id, config->users[i].client_id ? config->users[i].client_id : "*");
+            queue_insert_tail(&b->account_q, &acc->node);
+        }
+    }
+
+    b->connections = 0;
+    b->shutdown_pending = 0;
+    b->pending_clients = 0;
+    b->trie_dump_enabled = 0;
+
+    snowflake_init(&b->snowflake, 0, 0);
+    return 0;
+}
+
+int
+mqtt_broker_start(mqtt_broker_t *b) {
+    uv_loop_t *loop = b->loop;
+    uv_tcp_t *server;
+    struct sockaddr_in addr;
+    int rc;
+
+    server = (uv_tcp_t *)malloc(sizeof *server);
+    if (!server) return -1;
+
+    b->server = *server;
+    server = &b->server;
+    b->server = (uv_tcp_t){0};
+
+    uv_tcp_init(loop, server);
+    rc = uv_ip4_addr(b->host, b->port, &addr);
+    if (rc) {
+        LOG_E("ip4_addr %s:%d %s", b->host, b->port, uv_strerror(rc));
+        free(server);
+        return -1;
+    }
+    rc = uv_tcp_bind(server, (const struct sockaddr *)&addr, 0);
+    if (rc) {
+        LOG_E("bind %s:%d %s", b->host, b->port, uv_strerror(rc));
+        free(server);
+        return -1;
+    }
+    rc = uv_listen((uv_stream_t *)server, SOMAXCONN, _broker_on_connection);
+    if (rc) {
+        LOG_E("listen %s:%d %s", b->host, b->port, uv_strerror(rc));
+        free(server);
         return -1;
     }
 
-    snowflake_init(&B.snowflake, 0, 0);
+    loop->data = b;
+
+    uv_timer_init(loop, &b->timer);
+    uv_timer_start(&b->timer, _broker_on_timer, 1000, 1000);
+
+    uv_idle_init(loop, &b->idle);
+
+    LOG_I("mqtt broker at %s:%d started", b->host, b->port);
     return 0;
+}
+
+void
+mqtt_broker_stop(mqtt_broker_t *b) {
+    b->shutdown_pending = 1;
+    uv_stop(b->loop);
+}
+
+void
+mqtt_broker_destroy(mqtt_broker_t *b) {
+    queue_t *qnode;
+    map_node_t *node, *next_node;
+
+    if (b->auth_type) free(b->auth_type);
+    if (b->auth_api) free(b->auth_api);
+    free(b->host);
+    map_foreach_safe(node, next_node, &b->session_m) {
+        mqtt_session_t *s = map_data(node, mqtt_session_t, node);
+        map_erase(&b->session_m, node);
+        mqtt_session_destroy(b, s);
+    }
+    while (!queue_empty(&b->account_q)) {
+        qnode = queue_head(&b->account_q);
+        queue_remove(qnode);
+        mqtt_account_t *acc = queue_data(qnode, mqtt_account_t, node);
+        mqtt_str_free(&acc->client_id);
+        mqtt_str_free(&acc->username);
+        mqtt_str_free(&acc->password);
+        free(acc);
+    }
+    mqtt_trie_destroy(b->sub_root);
+    free(b);
+}
+
+int
+mqtt_broker_run(mqtt_broker_t *b) {
+    return uv_run(b->loop, UV_RUN_DEFAULT);
 }
 
 int
 main(int argc, char *argv[]) {
     uv_loop_t *loop;
-    uv_tcp_t server;
-    uv_timer_t timer;
-    struct sockaddr_in addr;
     int rc;
+    mqtt_broker_config_t config;
+    mqtt_broker_t *b;
 
     signal(SIGPIPE, SIG_IGN);
 
     loop = uv_default_loop();
 
-    if (mqtt_broker_init(loop, argc, argv)) {
-        LOG_E("broker init failed");
+    mqtt_broker_config_init(&config);
+
+    b = calloc(1, sizeof(*b));
+    if (!b) return EXIT_FAILURE;
+
+    if (argc > 1 && ini_parse(argv[1], _broker_config, b)) {
+        LOG_E("config file %s parse error", argv[1]);
+        mqtt_broker_destroy(b);
         return EXIT_FAILURE;
     }
 
-    uv_tcp_init(loop, &server);
-    rc = uv_ip4_addr(B.host, B.port, &addr);
+    mqtt_broker_create(&config, loop, b);
+
+    rc = mqtt_broker_start(b);
     if (rc) {
-        LOG_E("ip4_addr %s:%d %s", B.host, B.port, uv_strerror(rc));
-        return EXIT_FAILURE;
-    }
-    rc = uv_tcp_bind(&server, (const struct sockaddr *)&addr, 0);
-    if (rc) {
-        LOG_E("bind %s:%d %s", B.host, B.port, uv_strerror(rc));
-        return EXIT_FAILURE;
-    }
-    rc = uv_listen((uv_stream_t *)&server, SOMAXCONN, _broker_on_connection);
-    if (rc) {
-        LOG_E("listen %s:%d %s", B.host, B.port, uv_strerror(rc));
+        mqtt_broker_destroy(b);
         return EXIT_FAILURE;
     }
 
-    uv_timer_init(loop, &timer);
-    uv_timer_start(&timer, _broker_on_timer, 1000, 1000);
-
-    uv_idle_init(loop, &B.idle);
-
-    LOG_I("mqtt broker at %s:%d started", B.host, B.port);
-    return uv_run(loop, UV_RUN_DEFAULT);
+    return mqtt_broker_run(b);
 }
