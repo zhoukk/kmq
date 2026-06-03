@@ -145,9 +145,10 @@ main(int argc, char *argv[]) {
 
     while (1) {
         mqtt_str_t outgoing, incoming;
-        uint64_t t1, t2;
+        uint64_t now;
 
-        t1 = network_time_now();
+        now = network_time_now();
+        mqtt_sn_cli_set_time(m, now);
         mqtt_sn_cli_outgoing(m, &outgoing);
         if (network_udp_transfer(net, &outgoing, &incoming)) {
             break;
@@ -155,8 +156,9 @@ main(int argc, char *argv[]) {
         if (mqtt_sn_cli_incoming(m, &incoming)) {
             break;
         }
-        t2 = network_time_now();
-        if (mqtt_sn_cli_elapsed(m, t2 - t1)) {
+        now = network_time_now();
+        mqtt_sn_cli_set_time(m, now);
+        if (mqtt_sn_cli_elapsed(m)) {
             break;
         }
     }

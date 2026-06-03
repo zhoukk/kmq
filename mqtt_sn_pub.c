@@ -38,7 +38,6 @@ enum {
 static char *host = 0;
 static int port = MQTT_SN_UDP_PORT;
 static int uport = 0;
-static int debug = 0;
 static int quiet = 0;
 static int pub_mode = MSGMODE_NONE;
 
@@ -67,10 +66,9 @@ usage(void) {
     printf("Usage: mqtt_sn_pub [-h host] [-k keepalive] [-p port] [-q qos] [-R] {-f file | -l | -n | -m message} -t "
            "topic\n");
     printf("                     [-i id] [-I id_prefix] [-r radius]\n");
-    printf("                     [-d] [--quiet]\n");
+    printf("                     [--quiet]\n");
     printf("                     [--will-topic [--will-payload payload] [--will-qos qos] [--will-retain]]\n");
     printf("       mqtt_sn_pub --help\n\n");
-    printf(" -d : enable debug messages.\n");
     printf(" -f : send the contents of a file as the message.\n");
     printf(" -h : mqtt-sn multicast host or host for qos -1 to sendto. Defaults to 225.1.1.1.\n");
     printf(" -i : id to use for this client. Defaults to mqtt_sn_pub_ appended with the process id.\n");
@@ -128,8 +126,6 @@ config(int argc, char *argv[]) {
                 }
             }
             i++;
-        } else if (!strcmp(argv[i], "-d") || !strcmp(argv[i], "--debug")) {
-            debug = 1;
         } else if (!strcmp(argv[i], "-f") || !strcmp(argv[i], "--file")) {
             if (pub_mode != MSGMODE_NONE) {
                 fprintf(stderr, "Error: Only one type of message can be sent at once.\n\n");
@@ -305,35 +301,52 @@ e:
 
 static int
 load_stdin_line(void) {
-    char buff[1024];
-    if (!fgets(buff, 1024, stdin))
-        return -1;
+    char *buff = NULL;
+    size_t buff_size = 0;
+    ssize_t nread;
 
-    length = strlen(buff);
-    if (buff[length - 1] == '\n')
+    nread = getline(&buff, &buff_size, stdin);
+    if (nread < 0) {
+        free(buff);
+        return -1;
+    }
+
+    length = nread;
+    if (buff[length - 1] == '\n') {
         buff[length - 1] = '\0';
-    length -= 1;
+        length -= 1;
+    }
     payload = strdup(buff);
+    free(buff);
     return 0;
 }
 
 static int
 load_stdin(void) {
     long pos = 0;
-    char buf[1024];
+    long capacity = 0;
+    char buf[4096];
     char *aux_message = 0;
 
     while (!feof(stdin)) {
         long rlen;
-        rlen = fread(buf, 1, 1024, stdin);
-        aux_message = realloc(payload, pos + rlen);
-        if (!aux_message) {
-            if (!quiet)
-                fprintf(stderr, "Error: Out of memory.\n");
-            free(payload);
-            payload = 0;
-            return 1;
-        } else {
+        rlen = fread(buf, 1, 4096, stdin);
+        if (rlen <= 0)
+            break;
+        /* Exponential growth to reduce realloc frequency */
+        if (pos + rlen > capacity) {
+            capacity = (capacity == 0) ? 4096 : capacity;
+            while (capacity < pos + rlen) {
+                capacity *= 2;
+            }
+            aux_message = realloc(payload, capacity);
+            if (!aux_message) {
+                if (!quiet)
+                    fprintf(stderr, "Error: Out of memory.\n");
+                free(payload);
+                payload = 0;
+                return 1;
+            }
             payload = aux_message;
         }
         memcpy(&(payload[pos]), buf, rlen);
@@ -419,25 +432,30 @@ _puback(mqtt_sn_cli_t *m, void *ud, const mqtt_sn_packet_t *pkt) {
 
 static void
 do_publish(mqtt_sn_cli_t *m, void *ud) {
-    mqtt_str_t message = {.s = payload, .n = length};
+    mqtt_str_t message;
     mqtt_sn_topic_t t;
 
     t.type = MQTT_SN_TOPIC_ID_TYPE_NORMAL;
     mqtt_str_from(&t.name, topic);
 
+    message.s = payload;
+    message.n = length;
     mqtt_sn_cli_publish(m, retain, &t, qos, &message, 0);
     if (qos == -1) {
         mqtt_sn_cli_disconnect(m, 0);
         return;
     }
-    if (qos == MQTT_SN_QOS_0) {
-        if (pub_mode == MSGMODE_STDIN_LINE) {
+    if (qos == MQTT_SN_QOS_0 && pub_mode == MSGMODE_STDIN_LINE) {
+        /* Use iteration instead of recursion to avoid stack overflow with many messages */
+        while (1) {
             if (load_stdin_line()) {
                 fprintf(stderr, "Error loading input line from stdin.\n");
                 mqtt_sn_cli_disconnect(m, 0);
                 return;
             }
-            do_publish(m, ud);
+            message.s = payload;
+            message.n = length;
+            mqtt_sn_cli_publish(m, retain, &t, qos, &message, 0);
         }
     }
 }
@@ -447,6 +465,7 @@ _regack(mqtt_sn_cli_t *m, void *ud, const mqtt_sn_packet_t *pkt) {
     if (MQTT_SN_RC_ACCEPTED != pkt->v.regack.return_code) {
         if (!quiet)
             fprintf(stderr, "register %s\n", mqtt_sn_rc_name(pkt->v.regack.return_code));
+        mqtt_sn_cli_disconnect(m, 0);
         return;
     }
     if (!quiet)
@@ -458,6 +477,7 @@ static void
 _connack(mqtt_sn_cli_t *m, void *ud, const mqtt_sn_packet_t *pkt) {
     if (pkt->v.connack.return_code != MQTT_SN_RC_ACCEPTED) {
         printf("connect %s\n", mqtt_sn_rc_name(pkt->v.connack.return_code));
+        mqtt_sn_cli_disconnect(m, 0);
         return;
     }
     if (qos == -1) {
@@ -563,9 +583,10 @@ main(int argc, char *argv[]) {
 
     while (1) {
         mqtt_str_t outgoing, incoming;
-        uint64_t t1, t2;
+        uint64_t now;
 
-        t1 = network_time_now();
+        now = network_time_now();
+        mqtt_sn_cli_set_time(m, now);
         mqtt_sn_cli_outgoing(m, &outgoing);
         if (network_udp_transfer(net, &outgoing, &incoming)) {
             break;
@@ -573,8 +594,9 @@ main(int argc, char *argv[]) {
         if (mqtt_sn_cli_incoming(m, &incoming)) {
             break;
         }
-        t2 = network_time_now();
-        if (mqtt_sn_cli_elapsed(m, t2 - t1)) {
+        now = network_time_now();
+        mqtt_sn_cli_set_time(m, now);
+        if (mqtt_sn_cli_elapsed(m)) {
             break;
         }
     }

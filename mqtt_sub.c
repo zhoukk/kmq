@@ -28,7 +28,6 @@
 
 static char *host = 0;
 static int port = MQTT_TCP_PORT;
-static int debug = 0;
 static int quiet = 0;
 static int verbose = 0;
 static int msg_count = 0;
@@ -61,13 +60,12 @@ usage(void) {
     printf("Usage: mqtt_sub [-c] [-h host] [-k keepalive] [-p port] [-q qos] [-R] -t topic ...\n");
     printf("                     [-C msg_count] [-T filter_out]\n");
     printf("                     [-i id] [-I id_prefix]\n");
-    printf("                     [-d] [-N] [--quiet] [-v]\n");
+    printf("                     [-N] [--quiet] [-v]\n");
     printf("                     [-u username [-P password]]\n");
     printf("                     [--will-topic [--will-payload payload] [--will-qos qos] [--will-retain]]\n");
     printf("       mqtt_sub --help\n\n");
     printf(" -c : disable 'clean session' (store subscription and pending messages when client disconnects).\n");
     printf(" -C : disconnect and exit after receiving the 'msg_count' messages.\n");
-    printf(" -d : enable debug messages.\n");
     printf(" -h : mqtt host to connect to. Defaults to localhost.\n");
     printf(" -i : id to use for this client. Defaults to mqtt_sub_ appended with the process id.\n");
     printf(" -I : define the client id as id_prefix appended with the process id. Useful for when the\n");
@@ -113,8 +111,6 @@ config(int argc, char *argv[]) {
                 }
             }
             i++;
-        } else if (!strcmp(argv[i], "-d") || !strcmp(argv[i], "--debug")) {
-            debug = 1;
         } else if (!strcmp(argv[i], "-C")) {
             if (i == argc - 1) {
                 fprintf(stderr, "Error: -C argument given but no count specified.\n\n");
@@ -330,17 +326,21 @@ _publish(mqtt_cli_t *m, void *ud, const mqtt_packet_t *pkt) {
 
 static void
 _suback(mqtt_cli_t *m, void *ud, const mqtt_packet_t *pkt) {
+    int i;
     (void)m;
     (void)ud;
     (void)pkt;
 
-    if (!quiet)
-        printf("Subscribed, topic:%s qos:%d\n", topics[0], qos);
+    if (!quiet) {
+        for (i = 0; i < topic_count; i++) {
+            printf("Subscribed, topic:%s qos:%d\n", topics[i], qos);
+        }
+    }
 }
 
 static void
 _connack(mqtt_cli_t *m, void *ud, const mqtt_packet_t *pkt) {
-    mqtt_qos_t qoss[128];
+    mqtt_qos_t *qoss;
     int i;
     (void)ud;
 
@@ -348,21 +348,31 @@ _connack(mqtt_cli_t *m, void *ud, const mqtt_packet_t *pkt) {
         if (pkt->v.connack.v3.return_code != MQTT_CRC_ACCEPTED) {
             if (!quiet)
                 printf("Connack, %s\n", mqtt_crc_name(pkt->v.connack.v3.return_code));
+            mqtt_cli_disconnect(m);
             return;
         }
     } else if (proto_ver == MQTT_VERSION_4) {
         if (pkt->v.connack.v4.return_code != MQTT_CRC_ACCEPTED) {
             if (!quiet)
                 printf("Connack, %s\n", mqtt_crc_name(pkt->v.connack.v4.return_code));
+            mqtt_cli_disconnect(m);
             return;
         }
     }
 
+    qoss = (mqtt_qos_t *)malloc(topic_count * sizeof(mqtt_qos_t));
+    if (!qoss) {
+        if (!quiet)
+            fprintf(stderr, "Error: Out of memory.\n");
+        mqtt_cli_disconnect(m);
+        return;
+    }
     for (i = 0; i < topic_count; i++) {
         qoss[i] = qos;
     }
 
     mqtt_cli_subscribe(m, topic_count, (const char **)topics, qoss, 0);
+    free(qoss);
 }
 
 int
@@ -379,12 +389,12 @@ main(int argc, char *argv[]) {
     if (clean_session == 0 && (client_id_prefix || !client_id)) {
         if (!quiet)
             fprintf(stderr, "Error: You must provide a client id if you are using the -c option.\n");
-        return 0;
+        return EXIT_FAILURE;
     }
     if (topic_count == 0) {
         if (!quiet)
             fprintf(stderr, "Error: You must specify a topic to subscribe to.\n");
-        return 0;
+        return EXIT_FAILURE;
     }
 
     if (!client_id) {
@@ -438,9 +448,10 @@ main(int argc, char *argv[]) {
     mqtt_cli_connect(m);
     while (1) {
         mqtt_str_t outgoing, incoming;
-        uint64_t t1, t2;
+        uint64_t now;
 
-        t1 = network_time_now();
+        now = network_time_now();
+        mqtt_cli_set_time(m, now);
         mqtt_cli_outgoing(m, &outgoing);
         if (network_tcp_transfer(net, &outgoing, &incoming)) {
             break;
@@ -448,8 +459,9 @@ main(int argc, char *argv[]) {
         if (mqtt_cli_incoming(m, &incoming)) {
             break;
         }
-        t2 = network_time_now();
-        if (mqtt_cli_elapsed(m, t2 - t1)) {
+        now = network_time_now();
+        mqtt_cli_set_time(m, now);
+        if (mqtt_cli_elapsed(m)) {
             break;
         }
     }

@@ -29,7 +29,6 @@
 static char *host = 0;
 static int port = MQTT_SN_UDP_PORT;
 static int uport = 0;
-static int debug = 0;
 static int quiet = 0;
 static int verbose = 0;
 static int msg_count = 0;
@@ -60,12 +59,11 @@ usage(void) {
     printf("Usage: mqtt_sn_sub [-c] [-h host] [-k keepalive] [-p port] [-q qos] [-R] -t topic ...\n");
     printf("                     [-C msg_count] [-r radius]\n");
     printf("                     [-i id] [-I id_prefix]\n");
-    printf("                     [-d] [-N] [--quiet] [-v]\n");
+    printf("                     [-N] [--quiet] [-v]\n");
     printf("                     [--will-topic [--will-payload payload] [--will-qos qos] [--will-retain]]\n");
     printf("       mqtt_sn_sub --help\n\n");
     printf(" -c : disable 'clean session' (store subscription and pending messages when client disconnects).\n");
     printf(" -C : disconnect and exit after receiving the 'msg_count' messages.\n");
-    printf(" -d : enable debug messages.\n");
     printf(" -h : mqtt-sn multicast host. Defaults to 225.1.1.1.\n");
     printf(" -i : id to use for this client. Defaults to mqtt_sn_sub_ appended with the process id.\n");
     printf(" -I : define the client id as id_prefix appended with the process id. Useful for when the\n");
@@ -120,8 +118,6 @@ config(int argc, char *argv[]) {
                 }
             }
             i++;
-        } else if (!strcmp(argv[i], "-d") || !strcmp(argv[i], "--debug")) {
-            debug = 1;
         } else if (!strcmp(argv[i], "-C")) {
             if (i == argc - 1) {
                 fprintf(stderr, "Error: -C argument given but no count specified.\n\n");
@@ -324,6 +320,7 @@ _connack(mqtt_sn_cli_t *m, void *ud, const mqtt_sn_packet_t *pkt) {
 
     if (pkt->v.connack.return_code != MQTT_SN_RC_ACCEPTED) {
         printf("connect %s\n", mqtt_sn_rc_name(pkt->v.connack.return_code));
+        mqtt_sn_cli_disconnect(m, 0);
         return;
     }
     for (i = 0; i < topic_count; i++) {
@@ -361,12 +358,12 @@ main(int argc, char *argv[]) {
     if (clean_session == 0 && (client_id_prefix || !client_id)) {
         if (!quiet)
             fprintf(stderr, "Error: You must provide a client id if you are using the -c param.\n");
-        return 0;
+        return EXIT_FAILURE;
     }
     if (topic_count == 0) {
         if (!quiet)
             fprintf(stderr, "Error: You must specify a topic to subscribe to.\n");
-        return 0;
+        return EXIT_FAILURE;
     }
 
     if (!client_id) {
@@ -418,9 +415,10 @@ main(int argc, char *argv[]) {
 
     while (1) {
         mqtt_str_t outgoing, incoming;
-        uint64_t t1, t2;
+        uint64_t now;
 
-        t1 = network_time_now();
+        now = network_time_now();
+        mqtt_sn_cli_set_time(m, now);
         mqtt_sn_cli_outgoing(m, &outgoing);
         if (network_udp_transfer(net, &outgoing, &incoming)) {
             break;
@@ -428,8 +426,9 @@ main(int argc, char *argv[]) {
         if (mqtt_sn_cli_incoming(m, &incoming)) {
             break;
         }
-        t2 = network_time_now();
-        if (mqtt_sn_cli_elapsed(m, t2 - t1)) {
+        now = network_time_now();
+        mqtt_sn_cli_set_time(m, now);
+        if (mqtt_sn_cli_elapsed(m)) {
             break;
         }
     }

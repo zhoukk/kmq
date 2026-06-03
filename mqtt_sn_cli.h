@@ -92,7 +92,8 @@ int mqtt_sn_cli_disconnect(mqtt_sn_cli_t *m, uint16_t duration);
 
 int mqtt_sn_cli_outgoing(mqtt_sn_cli_t *m, mqtt_str_t *outgoing);
 int mqtt_sn_cli_incoming(mqtt_sn_cli_t *m, mqtt_str_t *incoming);
-int mqtt_sn_cli_elapsed(mqtt_sn_cli_t *m, uint64_t time);
+int mqtt_sn_cli_elapsed(mqtt_sn_cli_t *m);
+void mqtt_sn_cli_set_time(mqtt_sn_cli_t *m, uint64_t now);
 
 #endif /* _MQTT_SN_CLI_H_ */
 
@@ -823,13 +824,17 @@ mqtt_sn_cli_incoming(mqtt_sn_cli_t *m, mqtt_str_t *incoming) {
 }
 
 int
-mqtt_sn_cli_elapsed(mqtt_sn_cli_t *m, uint64_t time) {
+mqtt_sn_cli_elapsed(mqtt_sn_cli_t *m) {
     int rc;
 
-    m->t.now += time;
     _check_keepalive(m);
     rc = _check_padding(m);
     return rc;
+}
+
+void
+mqtt_sn_cli_set_time(mqtt_sn_cli_t *m, uint64_t now) {
+    m->t.now = now;
 }
 
 #endif /* MQTT_SN_CLI_IMPL */

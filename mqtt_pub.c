@@ -37,7 +37,6 @@ enum {
 
 static char *host = 0;
 static int port = MQTT_TCP_PORT;
-static int debug = 0;
 static int quiet = 0;
 static int pub_mode = MSGMODE_NONE;
 
@@ -68,11 +67,10 @@ usage(void) {
     printf(
         "Usage: mqtt_pub [-h host] [-k keepalive] [-p port] [-q qos] [-r] {-f file | -l | -n | -m message} -t topic\n");
     printf("                     [-i id] [-I id_prefix]\n");
-    printf("                     [-d] [--quiet]\n");
+    printf("                     [--quiet]\n");
     printf("                     [-u username [-P password]]\n");
     printf("                     [--will-topic [--will-payload payload] [--will-qos qos] [--will-retain]]\n");
     printf("       mqtt_pub --help\n\n");
-    printf(" -d : enable debug messages.\n");
     printf(" -f : send the contents of a file as the message.\n");
     printf(" -h : mqtt host to connect to. Defaults to localhost.\n");
     printf(" -i : id to use for this client. Defaults to mqtt_pub_ appended with the process id.\n");
@@ -120,8 +118,6 @@ config(int argc, char *argv[]) {
                 }
             }
             i++;
-        } else if (!strcmp(argv[i], "-d") || !strcmp(argv[i], "--debug")) {
-            debug = 1;
         } else if (!strcmp(argv[i], "-f") || !strcmp(argv[i], "--file")) {
             if (pub_mode != MSGMODE_NONE) {
                 fprintf(stderr, "Error: Only one type of message can be sent at once.\n\n");
@@ -318,35 +314,52 @@ e:
 
 static int
 load_stdin_line(void) {
-    char buff[1024];
-    if (!fgets(buff, 1024, stdin))
-        return -1;
+    char *buff = NULL;
+    size_t buff_size = 0;
+    ssize_t nread;
 
-    length = strlen(buff);
-    if (buff[length - 1] == '\n')
+    nread = getline(&buff, &buff_size, stdin);
+    if (nread < 0) {
+        free(buff);
+        return -1;
+    }
+
+    length = nread;
+    if (buff[length - 1] == '\n') {
         buff[length - 1] = '\0';
-    length -= 1;
+        length -= 1;
+    }
     payload = strdup(buff);
+    free(buff);
     return 0;
 }
 
 static int
 load_stdin(void) {
     long pos = 0;
-    char buf[1024];
+    long capacity = 0;
+    char buf[4096];
     char *aux_message = 0;
 
     while (!feof(stdin)) {
         long rlen;
-        rlen = fread(buf, 1, 1024, stdin);
-        aux_message = realloc(payload, pos + rlen);
-        if (!aux_message) {
-            if (!quiet)
-                fprintf(stderr, "Error: Out of memory.\n");
-            free(payload);
-            payload = 0;
-            return 1;
-        } else {
+        rlen = fread(buf, 1, 4096, stdin);
+        if (rlen <= 0)
+            break;
+        /* Exponential growth to reduce realloc frequency */
+        if (pos + rlen > capacity) {
+            capacity = (capacity == 0) ? 4096 : capacity;
+            while (capacity < pos + rlen) {
+                capacity *= 2;
+            }
+            aux_message = realloc(payload, capacity);
+            if (!aux_message) {
+                if (!quiet)
+                    fprintf(stderr, "Error: Out of memory.\n");
+                free(payload);
+                payload = 0;
+                return 1;
+            }
             payload = aux_message;
         }
         memcpy(&(payload[pos]), buf, rlen);
@@ -421,17 +434,24 @@ do_publish(mqtt_cli_t *m) {
         mqtt_cli_disconnect(m);
         return;
     }
-    if (qos == MQTT_QOS_0) {
-        if (pub_mode == MSGMODE_STDIN_LINE) {
+    if (qos == MQTT_QOS_0 && pub_mode == MSGMODE_STDIN_LINE) {
+        /* Use iteration instead of recursion to avoid stack overflow with many messages */
+        while (1) {
             if (load_stdin_line()) {
                 fprintf(stderr, "Error loading input line from stdin.\n");
                 mqtt_cli_disconnect(m);
                 return;
             }
-            do_publish(m);
-        } else {
-            mqtt_cli_disconnect(m);
+            message.s = payload;
+            message.n = length;
+            rc = mqtt_cli_publish(m, retain, topic, qos, &message, 0);
+            if (rc) {
+                mqtt_cli_disconnect(m);
+                return;
+            }
         }
+    } else if (qos == MQTT_QOS_0) {
+        mqtt_cli_disconnect(m);
     }
 }
 
@@ -460,12 +480,14 @@ _connack(mqtt_cli_t *m, void *ud, const mqtt_packet_t *pkt) {
         if (pkt->v.connack.v3.return_code != MQTT_CRC_ACCEPTED) {
             if (!quiet)
                 printf("Connack, %s\n", mqtt_crc_name(pkt->v.connack.v3.return_code));
+            mqtt_cli_disconnect(m);
             return;
         }
     } else if (proto_ver == MQTT_VERSION_4) {
         if (pkt->v.connack.v4.return_code != MQTT_CRC_ACCEPTED) {
             if (!quiet)
                 printf("Connack, %s\n", mqtt_crc_name(pkt->v.connack.v4.return_code));
+            mqtt_cli_disconnect(m);
             return;
         }
     }
@@ -558,9 +580,10 @@ main(int argc, char *argv[]) {
     mqtt_cli_connect(m);
     while (1) {
         mqtt_str_t outgoing, incoming;
-        uint64_t t1, t2;
+        uint64_t now;
 
-        t1 = network_time_now();
+        now = network_time_now();
+        mqtt_cli_set_time(m, now);
         mqtt_cli_outgoing(m, &outgoing);
         if (network_tcp_transfer(net, &outgoing, &incoming)) {
             break;
@@ -568,8 +591,9 @@ main(int argc, char *argv[]) {
         if (mqtt_cli_incoming(m, &incoming)) {
             break;
         }
-        t2 = network_time_now();
-        if (mqtt_cli_elapsed(m, t2 - t1)) {
+        now = network_time_now();
+        mqtt_cli_set_time(m, now);
+        if (mqtt_cli_elapsed(m)) {
             break;
         }
     }
