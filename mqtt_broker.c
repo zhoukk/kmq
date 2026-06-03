@@ -1019,8 +1019,8 @@ mqtt_session_create(mqtt_str_t *client_id) {
 
 static void
 mqtt_session_destroy(mqtt_session_t *s) {
+    queue_t *qnode;
     map_node_t *node, *next;
-    queue_t *qnode, *qnext;
 
     LOG_D("session.%p.destroy %.*s", s, MQTT_STR_PRINT(s->client_id));
 
