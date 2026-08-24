@@ -518,6 +518,7 @@ websocket_generate_key(char key[WS_KEY_LEN]) {
     }
     n = EVP_EncodeBlock(_key, randkey, 16);
     assert(n == WS_KEY_LEN);
+    (void)n;
     memcpy(key, (char *)_key, WS_KEY_LEN);
 }
 
@@ -533,6 +534,7 @@ websocket_generate_accept(char accept[WS_ACCEPT_LEN], const char key[WS_KEY_LEN]
     SHA1(buff, (size_t)(WS_KEY_LEN + WS_SECRET_LEN), digest);
     n = EVP_EncodeBlock(_accept, digest, SHA_DIGEST_LENGTH);
     assert(n == WS_ACCEPT_LEN);
+    (void)n;
     memcpy(accept, (char *)_accept, WS_ACCEPT_LEN);
 }
 
@@ -695,9 +697,13 @@ __on_header_value(http_parser *p, const char *at, size_t length) {
     wshttp_t *wh = (wshttp_t *)p->data;
     int flag = websocket_valid_header(&wh->flags, wh->header_at, wh->header_length, at, length);
     if (flag == WS_HEADER_KEY) {
-        strncpy(wh->key, at, length);
+        if (length > sizeof(wh->key))
+            length = sizeof(wh->key);
+        memcpy(wh->key, at, length);
     } else if (flag == WS_HEADER_ACCEPT) {
-        strncpy(wh->accept, at, length);
+        if (length > sizeof(wh->accept))
+            length = sizeof(wh->accept);
+        memcpy(wh->accept, at, length);
     } else if (flag == WS_HEADER_PROTOCOL) {
         int n = length < WSHTTP_MAX_PROTOCOL_LEN ? length : WSHTTP_MAX_PROTOCOL_LEN;
         strncpy(wh->protocol, at, n);

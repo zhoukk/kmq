@@ -432,7 +432,7 @@ _puback(mqtt_sn_cli_t *m, void *ud, const mqtt_sn_packet_t *pkt) {
 
 static void
 do_publish(mqtt_sn_cli_t *m, void *ud) {
-    mqtt_str_t message;
+    mqtt_str_t message = MQTT_STR_INITIALIZER;
     mqtt_sn_topic_t t;
 
     t.type = MQTT_SN_TOPIC_ID_TYPE_NORMAL;

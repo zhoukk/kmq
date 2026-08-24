@@ -424,7 +424,7 @@ load_file(void) {
 
 static void
 do_publish(mqtt_cli_t *m) {
-    mqtt_str_t message;
+    mqtt_str_t message = MQTT_STR_INITIALIZER;
     int rc;
 
     message.s = payload;
