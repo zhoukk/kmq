@@ -44,12 +44,6 @@ add_executable(mqtt_broker
     http_parser.c
 )
 
-add_executable(mqtt_proxy
-    mqtt_proxy.c
-    http_parser.c
-    rbtree.c
-)
-
 add_executable(mqtt_sn_gateway
     mqtt_sn_gateway.c
     rbtree.c
@@ -95,7 +89,6 @@ if(WIN32)
     target_link_libraries(mqtt_sn_gateway PkgConfig::uv ws2_32)
 else()
     target_link_libraries(mqtt_cli_test ${OPENSSL_LIBRARIES})
-    target_link_libraries(mqtt_broker PkgConfig::uv)
-    target_link_libraries(mqtt_proxy PkgConfig::uv ${OPENSSL_LIBRARIES} pthread)
+    target_link_libraries(mqtt_broker PkgConfig::uv ${OPENSSL_LIBRARIES} pthread)
     target_link_libraries(mqtt_sn_gateway PkgConfig::uv)
 endif()
