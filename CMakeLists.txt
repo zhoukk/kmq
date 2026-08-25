@@ -77,8 +77,13 @@ add_executable(mqtt_test
     mqtt_test.c
 )
 
+add_executable(mqtt_broker_test
+    mqtt_broker_test.c
+)
+
 if(WIN32)
     target_link_libraries(mqtt_cli_test ${OPENSSL_LIBRARIES} ws2_32)
+    target_link_libraries(mqtt_broker_test ${OPENSSL_LIBRARIES} ws2_32)
     target_link_libraries(mqtt_sn_cli_test ws2_32)
     target_link_libraries(mqtt_pub ws2_32)
     target_link_libraries(mqtt_sub ws2_32)
@@ -89,6 +94,7 @@ if(WIN32)
     target_link_libraries(mqtt_sn_gateway PkgConfig::uv ws2_32)
 else()
     target_link_libraries(mqtt_cli_test ${OPENSSL_LIBRARIES})
+    target_link_libraries(mqtt_broker_test ${OPENSSL_LIBRARIES})
     target_link_libraries(mqtt_broker PkgConfig::uv ${OPENSSL_LIBRARIES} pthread)
     target_link_libraries(mqtt_sn_gateway PkgConfig::uv)
 endif()

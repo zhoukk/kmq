@@ -296,6 +296,7 @@ struct mqtt_session_s {
     uint32_t session_expiry;
     uv_timer_t expiry_timer;
     int expiry_timer_on;
+    int closing_handles; /* embedded uv handles still closing; 0 = freeable */
     /* topic alias (v5) */
     map_t in_alias_m;  /* alias -> topic (client -> broker) */
     map_t out_alias_m; /* topic -> alias (broker -> client) */
@@ -508,52 +509,83 @@ mqtt_topic_segment(mqtt_str_t *topic) {
 static void
 mqtt_properties_copy(mqtt_properties_t *dst, const mqtt_properties_t *src) {
     const mqtt_property_t *p;
+    mqtt_property_t **tail;
 
+    /* build the nodes directly: mqtt_properties_add() takes C strings and
+     * would misinterpret the property value union */
+    tail = &dst->head;
+    while (*tail) {
+        tail = &(*tail)->next;
+    }
     for (p = src->head; p; p = p->next) {
-        mqtt_property_t tmp;
+        mqtt_property_t *np;
 
-        memset(&tmp, 0, sizeof tmp);
-        tmp.code = p->code;
-        switch (MQTT_PROPERTY_DEFS[p->code].type) {
+        np = (mqtt_property_t *)MQTT_MALLOC(sizeof *np);
+        if (!np) {
+            break;
+        }
+        memset(np, 0, sizeof *np);
+        np->code = p->code;
+        switch (mqtt_property_type(p->code)) {
         case MQTT_PROPERTY_TYPE_BYTE:
-            tmp.b1 = p->b1;
-            mqtt_properties_add(dst, p->code, &tmp.b1, NULL);
+            np->b1 = p->b1;
             break;
         case MQTT_PROPERTY_TYPE_TWO_BYTE_INTEGER:
-            tmp.b2 = p->b2;
-            mqtt_properties_add(dst, p->code, &tmp.b2, NULL);
+            np->b2 = p->b2;
             break;
         case MQTT_PROPERTY_TYPE_FOUR_BYTE_INTEGER:
-            tmp.b4 = p->b4;
-            mqtt_properties_add(dst, p->code, &tmp.b4, NULL);
+            np->b4 = p->b4;
             break;
         case MQTT_PROPERTY_TYPE_VARIABLE_BYTE_INTEGER:
-            tmp.bv = p->bv;
-            mqtt_properties_add(dst, p->code, &tmp.bv, NULL);
+            np->bv = p->bv;
             break;
         case MQTT_PROPERTY_TYPE_BINARY_DATA: {
-            mqtt_str_t s = p->data;
+            mqtt_str_t tmp = p->data;
 
-            mqtt_str_copy(&tmp.data, &s);
-            mqtt_properties_add(dst, p->code, &tmp.data, NULL);
+            mqtt_str_copy(&np->data, &tmp);
             break;
         }
         case MQTT_PROPERTY_TYPE_UTF_8_ENCODED_STRING: {
-            mqtt_str_t s = p->str;
+            mqtt_str_t tmp = p->str;
 
-            mqtt_str_copy(&tmp.str, &s);
-            mqtt_properties_add(dst, p->code, &tmp.str, NULL);
+            mqtt_str_copy(&np->str, &tmp);
             break;
         }
         case MQTT_PROPERTY_TYPE_UTF_8_STRING_PAIR: {
-            mqtt_str_t name = p->pair.name;
-            mqtt_str_t value = p->pair.value;
+            mqtt_str_t tmp_name = p->pair.name;
+            mqtt_str_t tmp_value = p->pair.value;
 
-            mqtt_str_copy(&tmp.pair.name, &name);
-            mqtt_str_copy(&tmp.pair.value, &value);
-            mqtt_properties_add(dst, p->code, &tmp.pair, NULL);
+            mqtt_str_copy(&np->pair.name, &tmp_name);
+            mqtt_str_copy(&np->pair.value, &tmp_value);
             break;
         }
+        }
+        dst->length += __property_len(np) + 1;
+        *tail = np;
+        tail = &np->next;
+    }
+}
+
+/* free the value bytes owned by deep-copied property nodes (mqtt_properties_copy);
+ * the nodes themselves are released by __properties_free / mqtt_packet_cleanup */
+static void
+mqtt_props_free_bytes(mqtt_properties_t *props) {
+    mqtt_property_t *p;
+
+    for (p = props->head; p; p = p->next) {
+        switch (mqtt_property_type(p->code)) {
+        case MQTT_PROPERTY_TYPE_BINARY_DATA:
+            mqtt_str_free(&p->data);
+            break;
+        case MQTT_PROPERTY_TYPE_UTF_8_ENCODED_STRING:
+            mqtt_str_free(&p->str);
+            break;
+        case MQTT_PROPERTY_TYPE_UTF_8_STRING_PAIR:
+            mqtt_str_free(&p->pair.name);
+            mqtt_str_free(&p->pair.value);
+            break;
+        default:
+            break;
         }
     }
 }
@@ -567,6 +599,15 @@ mqtt_message_props_extract(mqtt_message_t *msg, mqtt_broker_t *b, mqtt_packet_t 
         return;
     }
     mqtt_properties_copy(&msg->props, &pkt->v.publish.v5.properties);
+    /* the topic alias is session-specific ([MQTT-3.3.2-6]) and must not be
+     * forwarded to subscribers */
+    {
+        mqtt_property_t *ta = mqtt_properties_remove(&msg->props, MQTT_PROPERTY_TOPIC_ALIAS);
+
+        if (ta) {
+            MQTT_FREE(ta);
+        }
+    }
 
     prop = mqtt_properties_find(&msg->props, MQTT_PROPERTY_MESSAGE_EXPIRY_INTERVAL);
     if (prop && prop->b4 > 0) {
@@ -887,8 +928,9 @@ static int
 mqtt_client_disconnect(mqtt_client_t *c, uint8_t reason_code) {
     mqtt_packet_t pkt;
 
-    memset(&pkt, 0, sizeof(pkt));
-    pkt.f.flags = MQTT_FH_BUILD(MQTT_DISCONNECT, 0, 0, 0);
+    /* the version must be set or mqtt_serialize() refuses the packet and the
+     * v5 reason code would never reach the client */
+    mqtt_packet_init(&pkt, c->parser.version, MQTT_DISCONNECT);
     pkt.v.disconnect.v5.reason_code = reason_code;
 
     /* server-initiated disconnect: the will is not published */
@@ -1202,6 +1244,10 @@ mqtt_session_publish(mqtt_broker_t *b, mqtt_session_t *s, mqtt_message_t *msg, m
     }
 
     rc = mqtt_client_send(c, &res);
+    if (res.ver == MQTT_VERSION_5) {
+        mqtt_props_free_bytes(&res.v.publish.v5.properties);
+    }
+    mqtt_packet_cleanup(&res); /* release the copied pass-through properties */
     if (rc) {
         mqtt_client_shutdown(c);
     }
@@ -1746,6 +1792,19 @@ mqtt_broker_find_session(mqtt_broker_t *b, mqtt_str_t *client_id) {
     return 0;
 }
 
+/* [MQTT-3.5.1-1]: a retained message whose Message Expiry Interval has
+ * elapsed must not be delivered (lazy purge on access) */
+static int
+mqtt_trie_retain_expired(mqtt_broker_t *b, mqtt_trie_t *trie) {
+    if (trie->retain && trie->retain->expiry && (uint32_t)b->t_now >= trie->retain->expiry) {
+        LOG_I("retained message %.*s expired, purging", MQTT_STR_PRINT(trie->topic));
+        mqtt_message_destroy(trie->retain);
+        trie->retain = 0;
+        mqtt_broker_persist_mark(b);
+    }
+    return trie->retain ? 1 : 0;
+}
+
 static void
 mqtt_broker_subscribe(mqtt_broker_t *b, mqtt_session_t *s, mqtt_subscription_t *sub) {
     mqtt_str_t topic;
@@ -1777,7 +1836,7 @@ mqtt_broker_subscribe(mqtt_broker_t *b, mqtt_session_t *s, mqtt_subscription_t *
         suber = mqtt_subscriber_create(s, sub);
         mqtt_trie_add_subscriber(trie, suber);
 
-        if (trie->retain) {
+        if (mqtt_trie_retain_expired(b, trie)) {
             /* retain_handling: 0=send, 1=send on new sub, 2=never send */
             int deliver = 1;
 
@@ -1789,10 +1848,11 @@ mqtt_broker_subscribe(mqtt_broker_t *b, mqtt_session_t *s, mqtt_subscription_t *
             }
             if (deliver) {
                 mqtt_qos_t qos = sub->granted_qos < trie->retain->qos ? sub->granted_qos : trie->retain->qos;
-                mqtt_session_publish(b, s, trie->retain, &sub->topic_filter, qos, 1, sub->sub_id);
+                /* retain-as-published: deliver with the retain flag cleared */
+                mqtt_session_publish(b, s, trie->retain, &sub->topic_filter, qos, sub->rap ? 0 : 1, sub->sub_id);
             }
         }
-    } else if (sub->retain_handling == 0 && trie->retain) {
+    } else if (sub->retain_handling == 0 && mqtt_trie_retain_expired(b, trie)) {
         /* retain_handling=0: send retained messages even on updated subscription */
         int deliver = 1;
 
@@ -1801,7 +1861,7 @@ mqtt_broker_subscribe(mqtt_broker_t *b, mqtt_session_t *s, mqtt_subscription_t *
         }
         if (deliver) {
             mqtt_qos_t qos = sub->granted_qos < trie->retain->qos ? sub->granted_qos : trie->retain->qos;
-            mqtt_session_publish(b, s, trie->retain, &sub->topic_filter, qos, 1, sub->sub_id);
+            mqtt_session_publish(b, s, trie->retain, &sub->topic_filter, qos, sub->rap ? 0 : 1, sub->sub_id);
         }
     }
 
@@ -2013,6 +2073,18 @@ mqtt_session_create(mqtt_broker_t *b, mqtt_str_t *client_id) {
 }
 
 static void
+_session_on_timers_close(uv_handle_t *handle) {
+    mqtt_session_t *s;
+
+    s = (mqtt_session_t *)handle->data;
+    /* the timers are embedded in the session: free it only once both
+     * asynchronous closes have completed */
+    if (--s->closing_handles == 0) {
+        free(s);
+    }
+}
+
+static void
 mqtt_session_destroy(mqtt_broker_t *b, mqtt_session_t *s) {
     map_node_t *node, *next;
     queue_t *qnode;
@@ -2028,8 +2100,9 @@ mqtt_session_destroy(mqtt_broker_t *b, mqtt_session_t *s) {
         uv_timer_stop(&s->expiry_timer);
         s->expiry_timer_on = 0;
     }
-    uv_close((uv_handle_t *)&s->will_timer, NULL);
-    uv_close((uv_handle_t *)&s->expiry_timer, NULL);
+    s->closing_handles = 2;
+    uv_close((uv_handle_t *)&s->will_timer, _session_on_timers_close);
+    uv_close((uv_handle_t *)&s->expiry_timer, _session_on_timers_close);
 
     if (s->lwt) {
         mqtt_message_destroy(s->lwt);
@@ -2073,7 +2146,7 @@ mqtt_session_destroy(mqtt_broker_t *b, mqtt_session_t *s) {
         mqtt_subscription_destroy(sub);
     }
     mqtt_str_free(&s->client_id);
-    free(s);
+    /* s is freed by _session_on_timers_close once both timer handles are closed */
 }
 
 static void
@@ -2124,7 +2197,7 @@ _broker_ws_on_open(wshttp_t *wh, void *io, void *ud) {
 
     LOG_D("client.%p websocket open", c);
 
-    uv_read_stop((uv_stream_t *)c->tcp);
+    /* keep reading: wshttp_feed() is driven from _client_on_read() */
 }
 
 static void
@@ -2709,6 +2782,10 @@ mqtt_on_connect(mqtt_broker_t *b, mqtt_client_t *c, mqtt_packet_t *req, mqtt_pac
         }
         break;
     case MQTT_VERSION_5:
+        if (req->p.connect.client_id.n > 23) {
+            res->v.connack.v5.reason_code = MQTT_RC_CLIENT_IDENTIFIER_NOT_VALID;
+            goto e;
+        }
         break;
     }
 
@@ -2736,6 +2813,15 @@ mqtt_on_connect(mqtt_broker_t *b, mqtt_client_t *c, mqtt_packet_t *req, mqtt_pac
                 s->c = 0;
             }
             if (!(req->v.connect.connect_flags & MQTT_CF_CLEAN_SESSION)) {
+                /* session resumed: cancel the pending expiry/will-delay timers */
+                if (s->expiry_timer_on) {
+                    uv_timer_stop(&s->expiry_timer);
+                    s->expiry_timer_on = 0;
+                }
+                if (s->will_timer_on) {
+                    uv_timer_stop(&s->will_timer);
+                    s->will_timer_on = 0;
+                }
                 switch (req->ver) {
                 case MQTT_VERSION_3:
                     break;
@@ -2838,6 +2924,9 @@ mqtt_on_connect(mqtt_broker_t *b, mqtt_client_t *c, mqtt_packet_t *req, mqtt_pac
 
     /* v5: advertise server capabilities in CONNACK */
     if (req->ver == MQTT_VERSION_5) {
+        if (req->p.connect.client_id.n == 0) {
+            mqtt_properties_add(&res->v.connack.v5.properties, MQTT_PROPERTY_ASSIGNED_CLIENT_IDENTIFIER, client_id.s, NULL);
+        }
         mqtt_properties_add(&res->v.connack.v5.properties, MQTT_PROPERTY_SESSION_EXPIRY_INTERVAL, &s->session_expiry, NULL);
         mqtt_properties_add(&res->v.connack.v5.properties, MQTT_PROPERTY_RECEIVE_MAXIMUM, &s->receive_max, NULL);
         mqtt_properties_add(&res->v.connack.v5.properties, MQTT_PROPERTY_MAXIMUM_QOS, &b->server_max_qos, NULL);
@@ -3007,6 +3096,11 @@ mqtt_on_publish(mqtt_broker_t *b, mqtt_client_t *c, mqtt_packet_t *req, mqtt_pac
 
     if (mqtt_topic_name_validate(&req->v.publish.topic_name) != 0) {
         LOG_W("invalid publish topic name %.*s", MQTT_STR_PRINT(req->v.publish.topic_name));
+        if (req->ver == MQTT_VERSION_5 && MQTT_FH_QOS(req->f.flags) > MQTT_QOS_0) {
+            res->f.flags = MQTT_FH_BUILD(MQTT_PUBACK, 0, 0, 0);
+            res->v.puback.packet_id = req->v.publish.packet_id;
+            res->v.puback.v5.reason_code = MQTT_RC_TOPIC_NAME_INVALID;
+        }
         return -1;
     }
 
@@ -3213,7 +3307,8 @@ mqtt_on_subscribe(mqtt_broker_t *b, mqtt_client_t *c, mqtt_packet_t *req, mqtt_p
             retain_handling = MQTT_SUBOPT_RH(req->p.subscribe.options[i].flags);
             prop = mqtt_properties_find(&req->v.subscribe.v5.properties, MQTT_PROPERTY_SUBSCRIPTION_IDENTIFIER);
             if (prop) {
-                sub_id = prop->bv;
+                /* [MQTT-3.8.3-8]: the server MUST NOT use ids above 0x10000000 */
+                sub_id = (prop->bv > 0x10000000u) ? 0 : prop->bv;
             }
         }
 
@@ -3316,13 +3411,29 @@ mqtt_on_unsubscribe(mqtt_broker_t *b, mqtt_client_t *c, mqtt_packet_t *req, mqtt
 
     res->f.flags = MQTT_FH_BUILD(MQTT_UNSUBACK, 0, 0, 0);
     res->v.unsuback.packet_id = req->v.unsubscribe.packet_id;
-    mqtt_unsuback_generate(res, req->p.unsubscribe.n);
+    if (mqtt_unsuback_generate(res, req->p.unsubscribe.n)) {
+        return -1;
+    }
 
     for (i = 0; i < req->p.unsubscribe.n; i++) {
         mqtt_str_t topic_filter = req->p.unsubscribe.topic_filters[i];
         int rc;
 
         LOG_I("\ttopic_filter: %.*s", MQTT_STR_PRINT(topic_filter));
+
+        /* the parser does not reject invalid filters so the handler can
+         * answer: v5 gets UNSUBACK 0x8F ([MQTT-3.10.4]), v3.x is closed */
+        if (mqtt_topic_filter_validate(&topic_filter)) {
+            if (req->ver == MQTT_VERSION_5) {
+                res->p.unsuback.v5.reason_codes[i] = MQTT_RC_TOPIC_FILTER_INVALID;
+            } else {
+                /* v3.x: entire UNSUBSCRIBE fails with 0x80 (Malformed Packet) */
+                mqtt_client_disconnect(c, MQTT_RC_MALFORMED_PACKET);
+                mqtt_packet_cleanup(res);
+                return -1;
+            }
+            continue;
+        }
 
         rc = mqtt_session_unsubscribe(b, c->s, &topic_filter);
         if (req->ver == MQTT_VERSION_5) {
@@ -3475,11 +3586,20 @@ mqtt_client_data(mqtt_client_t *c, const char *data, ssize_t size) {
         c->t_last = b->t_now;
 
         rc = mqtt_client_handle(b, c, &req, &res);
-        if (!rc && MQTT_IS_PACKET_TYPE(MQTT_FH_TYPE(res.f.flags))) {
-            rc = mqtt_client_send(c, &res);
+        /* a response is sent even when the handler errors out (e.g. PUBACK
+         * 0x94 for an invalid topic alias before the connection is dropped) */
+        if (MQTT_IS_PACKET_TYPE(MQTT_FH_TYPE(res.f.flags))) {
+            int rc_send = mqtt_client_send(c, &res);
+
+            if (rc == 0) {
+                rc = rc_send;
+            }
         }
         mqtt_packet_cleanup(&req);
         if (rc) {
+            if (!c->closed) {
+                mqtt_client_shutdown(c);
+            }
             break;
         }
     }
@@ -3623,6 +3743,8 @@ _client_on_read(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf) {
             LOG_W("read: %s", uv_strerror(nread));
         }
         LOG_D("client.%p.close %s:%d", c, c->ip, c->port);
+        /* gate off further send/shutdown on the handle while it is closing */
+        c->closed = 1;
         uv_close((uv_handle_t *)stream, _client_on_close);
         return;
     }

@@ -2016,7 +2016,7 @@ const mqtt_rc_def_t MQTT_RC_DEFS[] = {
     {MQTT_RC_PACKET_IDENTIFIER_IN_USE, "Packet Identifier in use", {MQTT_PUBACK, MQTT_PUBREC, MQTT_SUBACK, MQTT_UNSUBACK}},
     {MQTT_RC_PACKET_IDENTIFIER_NOT_FOUND, "Packet Identifier not found", {MQTT_PUBREL, MQTT_PUBCOMP}},
     {MQTT_RC_RECEIVE_MAXIMUM_EXCEEDED, "Receive Maximum exceeded", {MQTT_DISCONNECT}},
-    {MQTT_RC_TOPIC_ALIAS_INVALID, "Topic Alias invalid", {MQTT_DISCONNECT}},
+    {MQTT_RC_TOPIC_ALIAS_INVALID, "Topic Alias invalid", {MQTT_PUBACK, MQTT_DISCONNECT}},
     {MQTT_RC_PACKET_TOO_LARGE, "Packet too large", {MQTT_CONNACK, MQTT_DISCONNECT}},
     {MQTT_RC_MESSAGE_RATE_TOO_HIGH, "Message rate too high", {MQTT_DISCONNECT}},
     {MQTT_RC_QUOTA_EXCEEDED, "Quota exceeded", {MQTT_CONNACK, MQTT_PUBACK, MQTT_PUBREC, MQTT_SUBACK, MQTT_DISCONNECT}},
@@ -2492,7 +2492,10 @@ __parse_publish(mqtt_str_t *remaining, mqtt_packet_t *pkt) {
         return -1;
     if (mqtt_str_read_utf(remaining, &v->topic_name))
         return -1;
-    if (mqtt_utf8_validate(&v->topic_name) != 0 || mqtt_topic_wildcard(&v->topic_name))
+    /* a wildcard in a topic name is a semantic error: let it reach the
+     * handler so a v5 server can answer PUBACK 0x90 before closing
+     * ([MQTT-3.3.2-8]); the UTF-8 check stays here (malformed packet). */
+    if (mqtt_utf8_validate(&v->topic_name) != 0)
         return -1;
     if (pkt->ver != MQTT_VERSION_5 && mqtt_str_empty(&v->topic_name))
         return -1;
@@ -2699,10 +2702,11 @@ __parse_subscribe(mqtt_str_t *remaining, mqtt_packet_t *pkt) {
         return -1;
     }
     memset(p->options, 0, p->n * sizeof(mqtt_subscribe_options_t));
+    /* topic filters are not validated here: a server must answer a SUBSCRIBE
+     * with an invalid filter by SUBACK 0x8F, not by dropping the packet
+     * ([MQTT-3.8.4-1]). */
     i = 0;
     while (0 == mqtt_str_read_utf8(remaining, &p->topic_filters[i])) {
-        if (mqtt_topic_filter_validate(&p->topic_filters[i]))
-            return -1;
         if (mqtt_str_read_u8(remaining, &p->options[i].flags))
             return -1;
         if (!MQTT_IS_QOS(p->options[i].flags & MQTT_SUBOPT_QOS_MASK)) {
@@ -2828,10 +2832,11 @@ __parse_unsubscribe(mqtt_str_t *remaining, mqtt_packet_t *pkt) {
     if (!p->topic_filters)
         return -1;
     memset(p->topic_filters, 0, p->n * sizeof(mqtt_str_t));
+    /* topic filters are not validated here: a server must answer an
+     * UNSUBSCRIBE with an invalid filter by UNSUBACK 0x8F, not by dropping
+     * the packet; see __parse_subscribe for the same reasoning. */
     i = 0;
     while (0 == mqtt_str_read_utf8(remaining, &p->topic_filters[i])) {
-        if (mqtt_topic_filter_validate(&p->topic_filters[i]))
-            return -1;
         i++;
     }
     return 0;

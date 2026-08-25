@@ -797,10 +797,16 @@ wshttp_feed(wshttp_t *wh, websocket_binary_t *b) {
         }
         b->length -= parsed;
         b->data += parsed;
-        if (wh->handshake) {
-            wh->config.on_open(wh, wh->config.io, wh->config.ud);
+        if (!wh->handshake) {
+            return 0;
         }
-    } else {
+        wh->config.on_open(wh, wh->config.io, wh->config.ud);
+        if (b->length == 0) {
+            return 0;
+        }
+    }
+
+    {
         websocket_frame_t f;
 
         do {

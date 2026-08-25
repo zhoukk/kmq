@@ -29,6 +29,7 @@ cmake -B build && cmake --build build
 | `mqtt_test` | offline parser fuzz: 2x10k random MQTT + MQTT-SN parses + mempool leak check. No network, safe to run anytime |
 | `mqtt_cli_test` | needs a running broker on 127.0.0.1:1883; connect→sub→pub→unsub→disconnect |
 | `mqtt_sn_cli_test` | needs a running `mqtt_sn_gateway`; full MQTT-SN advertise/search/gwinfo flow |
+| `mqtt_broker_test` | end-to-end broker suite: spawns 6 broker processes on unique ports (base = `18831 + pid % 2000`, or argv[1]); 56 tests covering v5 connack/caps, auth, session takeover/expiry, qos0-2, props passthrough, retained/RAP, wildcards, shared subs, topic alias (in/out/range/unknown), wills (immediate/delayed/cancelled/retained), offline queues, rate limit, $SYS, websocket, persistence, and v5 edge cases (client-id length 0x85, assigned client id, bad protocol name/level, invalid publish topic 0x90, duplicate QoS2 publish, QoS1 dup retransmission, max sub id, PUBREL/PUBACK unknown id 0x92, invalid unsubscribe filter 0x8F, DISCONNECT session expiry, retained message expiry). `BT_LOG=debug` sets broker log level. Exits non-zero on any failed check |
 
 ### broker.ini sections
 
@@ -59,12 +60,28 @@ Broker behavior notes:
 - In-flight QoS1/2 publications are retransmitted (dup=1) after `keep_alive`
   seconds without an ack; SIGTERM/SIGINT drain clients (v5 gets DISCONNECT 0x8B)
   and exit, will messages are NOT published on server shutdown.
-- MQTT 5 features: v5 PUBLISH properties are passed through to subscribers;
-  Topic Alias (both directions); Session Expiry (persistent sessions keep
-  subscriptions + an offline message queue, delivered on reconnect); Will Delay;
-  Subscription Identifier; `$share/group/filter` shared subscriptions (round-robin
-  across group members); CONNACK advertises server capabilities (receive maximum,
-  max packet size, max QoS, retained/wildcard/shared/sub-id available, topic alias max).
+- MQTT 5 features: v5 PUBLISH properties are passed through to subscribers
+  (the publisher's Topic Alias is stripped — it is session-specific,
+  [MQTT-3.3.2-6]); Topic Alias (both directions); Session Expiry (persistent
+  sessions keep subscriptions + an offline message queue, delivered on
+  reconnect); Will Delay; Subscription Identifier; `$share/group/filter` shared
+  subscriptions (round-robin across group members); CONNACK advertises server
+  capabilities (receive maximum, max packet size, max QoS, retained/wildcard/
+  shared/sub-id available, topic alias max).
+ - v5 error handling: an out-of-range or unknown incoming topic alias answers
+   PUBACK 0x94 (QoS>0) and closes the connection; a PUBLISH whose topic name
+   contains a wildcard answers PUBACK 0x90 (QoS>0) and closes the connection
+   (the parser does NOT reject the packet, so the handler can reply); an
+   invalid topic filter in a SUBSCRIBE answers SUBACK 0x8F, and an invalid
+   topic filter in an UNSUBSCRIBE answers UNSUBACK 0x8F (the parser does NOT
+   reject the packet, so the handler can reply); a client id longer than 23
+   chars answers CONNACK 0x85; an empty client id gets a generated one sent
+   back in the CONNACK `ASSIGNED_CLIENT_IDENTIFIER` property; a PUBREL with an
+   unknown packet id answers PUBCOMP 0x92; a PUBACK with an unknown packet id
+   is ignored. Retained messages are delivered with the retain flag cleared
+   for RAP (Retain As Published) subscribers. A retained message whose Message
+   Expiry Interval has lapsed is purged lazily on the next subscribe and not
+   delivered.
 - Backpressure: when a client's pending socket writes exceed `max_write_pending`,
   new PUBLISHes are buffered in its offline queue and retried on the next tick.
 - MQTT 5 AUTH packet: with no `auth_callback` it is a no-op that replies
