@@ -267,7 +267,7 @@ e:
 
 static void
 _publish(mqtt_sn_cli_t *m, void *ud, const mqtt_sn_packet_t *pkt) {
-    if (pkt->v.publish.flags.bits.retain == 1 && no_retain == 1)
+    if ((pkt->v.publish.flags.flag & MQTT_SNF_RETAIN) && no_retain == 1)
         return;
     if (verbose) {
         if (pkt->v.publish.data.n) {
@@ -311,7 +311,7 @@ _suback(mqtt_sn_cli_t *m, void *ud, const mqtt_sn_packet_t *pkt) {
 
     if (!quiet)
         printf("Subscribed (topic_id: %d, qos: %d, return_code: %d %s)\n", pkt->v.suback.topic_id,
-               pkt->v.suback.flags.bits.qos, pkt->v.suback.return_code, mqtt_sn_rc_name(pkt->v.suback.return_code));
+               MQTT_SNF_QOS(pkt->v.suback.flags.flag), pkt->v.suback.return_code, mqtt_sn_rc_name(pkt->v.suback.return_code));
 }
 
 static void
@@ -400,7 +400,7 @@ main(int argc, char *argv[]) {
         .ud = 0,
     };
 
-    net = network_udp_open("0.0.0.0", port);
+    net = network_udp_open("0.0.0.0", uport);
     if (!net) {
         if (!quiet)
             fprintf(stderr, "udp open error\n");
@@ -429,6 +429,9 @@ main(int argc, char *argv[]) {
         now = network_time_now();
         mqtt_sn_cli_set_time(m, now);
         if (mqtt_sn_cli_elapsed(m)) {
+            break;
+        }
+        if (mqtt_sn_cli_state(m) == MQTT_SN_STATE_DISCONNECTED) {
             break;
         }
     }

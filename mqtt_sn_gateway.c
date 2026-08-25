@@ -226,7 +226,7 @@ mqtt_client_create(mqtt_sn_client_t *msc) {
 
 static void
 mqtt_client_destroy(mqtt_client_t *c) {
-    mqtt_parser_unit(&c->parser);
+    mqtt_parser_cleanup(&c->parser);
     free(c);
 }
 
@@ -241,11 +241,13 @@ _gateway_on_send(uv_udp_send_t *req, int status) {
 
 static int
 _gateway_send(mqtt_sn_packet_t *pkt, struct sockaddr_in *addr) {
-    mqtt_str_t b;
+    mqtt_str_t b = MQTT_STR_INITIALIZER;
     uv_udp_send_t *req;
     uv_buf_t buf;
 
-    mqtt_sn_serialize(pkt, &b);
+    if (mqtt_sn_serialize(pkt, &b)) {
+        return -1;
+    }
 
     LOG_D("");
     LOG_DUMP(b.s, b.n);
@@ -294,10 +296,10 @@ _broker_send(mqtt_client_t *c, mqtt_packet_t *pkt) {
     mqtt_str_t b = MQTT_STR_INITIALIZER;
     int rc;
 
-    LOG_I("broker send: %s", mqtt_packet_type_name(pkt->f.bits.type));
+    LOG_I("broker send: %s", mqtt_packet_type_name((mqtt_packet_type_t)MQTT_FH_TYPE(pkt->f.flags)));
 
     rc = mqtt_serialize(pkt, &b);
-    mqtt_packet_unit(pkt);
+    mqtt_packet_cleanup(pkt);
     if (!rc) {
         uv_write_t *req;
         uv_buf_t buf;
@@ -363,10 +365,9 @@ mqtt_on_publish(mqtt_client_t *c, mqtt_packet_t *req, mqtt_packet_t *res) {
     }
 
     mqtt_sn_packet_init(&pkt, MQTT_SN_PUBLISH);
-    pkt.v.publish.flags.bits.dup = req->f.bits.dup;
-    pkt.v.publish.flags.bits.qos = req->f.bits.qos;
-    pkt.v.publish.flags.bits.retain = req->f.bits.retain;
-    pkt.v.publish.flags.bits.topic_id_type = MQTT_SN_TOPIC_ID_TYPE_PREDEFINED;
+    pkt.v.publish.flags.flag =
+        (uint8_t)((MQTT_FH_DUP(req->f.flags) ? MQTT_SNF_DUP : 0) | (MQTT_FH_QOS(req->f.flags) << 5) |
+                  (MQTT_FH_RETAIN(req->f.flags) ? MQTT_SNF_RETAIN : 0) | MQTT_SN_TOPIC_ID_TYPE_PREDEFINED);
     pkt.v.publish.msg_id = req->v.publish.packet_id;
     pkt.v.publish.topic.id = topic_id;
     mqtt_str_set(&pkt.v.publish.data, &req->p.publish.message);
@@ -445,13 +446,13 @@ mqtt_on_suback(mqtt_client_t *c, mqtt_packet_t *req, mqtt_packet_t *res) {
     mqtt_sn_packet_init(&pkt, MQTT_SN_SUBACK);
     pkt.v.suback.msg_id = req->v.suback.packet_id;
     if (req->ver == MQTT_VERSION_3) {
-        pkt.v.suback.flags.bits.qos = req->p.suback.v3.granted[0].bits.qos;
+        pkt.v.suback.flags.flag = (uint8_t)(req->p.suback.v3.granted[0].flags & MQTT_SUBOPT_QOS_MASK);
         pkt.v.suback.return_code = MQTT_SN_RC_ACCEPTED;
     } else if (req->ver == MQTT_VERSION_4) {
         if (req->p.suback.v4.return_codes[0] == MQTT_SRC_QOS_F)
             pkt.v.suback.return_code = MQTT_SN_RC_REJECTED_NOT_SUPPORTED;
         else
-            pkt.v.suback.flags.bits.qos = req->p.suback.v4.return_codes[0];
+            pkt.v.suback.flags.flag = (uint8_t)(req->p.suback.v4.return_codes[0] & MQTT_SUBOPT_QOS_MASK);
     }
     pkt.v.suback.topic_id = t->topic.id;
 
@@ -483,8 +484,8 @@ static int
 _broker_handle(mqtt_client_t *c, mqtt_packet_t *req, mqtt_packet_t *res) {
     int rc;
 
-    LOG_I("broker recv: %s", mqtt_packet_type_name(req->f.bits.type));
-    switch (req->f.bits.type) {
+    LOG_I("broker recv: %s", mqtt_packet_type_name((mqtt_packet_type_t)MQTT_FH_TYPE(req->f.flags)));
+    switch (MQTT_FH_TYPE(req->f.flags)) {
     case MQTT_CONNACK:
         rc = mqtt_on_connack(c, req, res);
         break;
@@ -545,10 +546,10 @@ _broker_on_read(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf) {
         mqtt_packet_init(&res, req.ver, MQTT_RESERVED);
 
         rc = _broker_handle(c, &req, &res);
-        if (!rc && MQTT_IS_PACKET_TYPE(res.f.bits.type)) {
+        if (!rc && MQTT_IS_PACKET_TYPE(MQTT_FH_TYPE(res.f.flags))) {
             rc = _broker_send(c, &res);
         }
-        mqtt_packet_unit(&req);
+        mqtt_packet_cleanup(&req);
         if (rc) {
             break;
         }
@@ -579,21 +580,24 @@ _mqtt_connect(mqtt_client_t *c) {
     msc = c->msc;
 
     mqtt_packet_init(&pkt, G.broker.version, MQTT_CONNECT);
-    pkt.v.connect.connect_flags.bits.clean_session = msc->clean_session;
+    if (msc->clean_session)
+        pkt.v.connect.connect_flags |= MQTT_CF_CLEAN_SESSION;
     pkt.v.connect.keep_alive = msc->duration;
     mqtt_str_set(&pkt.p.connect.client_id, &msc->client_id);
     if (G.broker.username) {
-        pkt.v.connect.connect_flags.bits.username_flag = 1;
+        pkt.v.connect.connect_flags |= MQTT_CF_USERNAME;
         mqtt_str_from(&pkt.p.connect.username, G.broker.username);
     }
     if (G.broker.password) {
-        pkt.v.connect.connect_flags.bits.password_flag = 1;
+        pkt.v.connect.connect_flags |= MQTT_CF_PASSWORD;
         mqtt_str_from(&pkt.p.connect.password, G.broker.password);
     }
     if (!mqtt_str_empty(&msc->lwt.topic)) {
-        pkt.v.connect.connect_flags.bits.will_flag = 1;
-        pkt.v.connect.connect_flags.bits.will_retain = msc->lwt.retain;
-        pkt.v.connect.connect_flags.bits.will_qos = (mqtt_qos_t)msc->lwt.qos;
+        pkt.v.connect.connect_flags |= MQTT_CF_WILL_FLAG;
+        if (msc->lwt.retain)
+            pkt.v.connect.connect_flags |= MQTT_CF_WILL_RETAIN;
+        pkt.v.connect.connect_flags = (uint8_t)((pkt.v.connect.connect_flags & ~MQTT_CF_WILL_QOS_MASK) |
+                                                ((msc->lwt.qos & 0x03) << 3));
         mqtt_str_set(&pkt.p.connect.will_topic, &msc->lwt.topic);
         mqtt_str_set(&pkt.p.connect.will_message, &msc->lwt.message);
     }
@@ -717,15 +721,15 @@ _check_keepalive() {
         mqtt_sn_client_t *c;
 
         c = map_data(node, mqtt_sn_client_t, node);
-        if (c->duration > 0 && G.t.now - c->t_last > c->duration) {
+        if (c->state != MQTT_SN_STATE_LOST && c->state != MQTT_SN_STATE_DISCONNECTED && c->duration > 0 &&
+            G.t.now - c->t_last > c->duration) {
             c->state = MQTT_SN_STATE_LOST;
 
             if (!mqtt_str_empty(&c->lwt.topic)) {
                 mqtt_packet_t pkt;
 
                 mqtt_packet_init(&pkt, G.broker.version, MQTT_PUBLISH);
-                pkt.f.bits.qos = c->lwt.qos;
-                pkt.f.bits.retain = c->lwt.retain;
+                pkt.f.flags = MQTT_FH_BUILD(MQTT_PUBLISH, 0, c->lwt.qos, c->lwt.retain);
                 mqtt_str_set(&pkt.v.publish.topic_name, &c->lwt.topic);
                 mqtt_str_set(&pkt.p.publish.message, &c->lwt.message);
 
@@ -749,16 +753,21 @@ _gateway_on_timer(uv_timer_t *handle) {
 static int
 mqtt_sn_on_searchgw(mqtt_sn_client_t *c, mqtt_sn_packet_t *req) {
     mqtt_sn_packet_t res;
+    int rc;
 
     mqtt_sn_packet_init(&res, MQTT_SN_GWINFO);
     res.v.gwinfo.gwid = G.gwid;
-    return _gateway_broadcast(&res);
+    rc = _gateway_broadcast(&res);
+    /* also reply unicast so requesters that cannot hear the broadcast still discover us. */
+    if (!rc)
+        rc = _gateway_unicast(c, &res);
+    return rc;
 }
 
 static int
 mqtt_sn_on_connect(mqtt_sn_client_t *c, mqtt_sn_packet_t *req) {
     c->duration = req->v.connect.duration;
-    c->clean_session = req->v.connect.flags.bits.clean_session;
+    c->clean_session = (req->v.connect.flags.flag & MQTT_SNF_CLEAN_SESSION) ? 1 : 0;
     mqtt_str_copy(&c->client_id, &req->v.connect.client_id);
 
     if (c->state == MQTT_SN_STATE_ASLEEP || c->state == MQTT_SN_STATE_AWAKE) {
@@ -769,7 +778,7 @@ mqtt_sn_on_connect(mqtt_sn_client_t *c, mqtt_sn_packet_t *req) {
         return _gateway_unicast(c, &res);
     }
 
-    if (req->v.connect.flags.bits.will) {
+    if (req->v.connect.flags.flag & MQTT_SNF_WILL) {
         mqtt_sn_packet_t res;
 
         mqtt_sn_packet_init(&res, MQTT_SN_WILLTOPICREQ);
@@ -784,8 +793,8 @@ static int
 mqtt_sn_on_willtopic(mqtt_sn_client_t *c, mqtt_sn_packet_t *req) {
     mqtt_sn_packet_t res;
 
-    c->lwt.retain = req->v.willtopic.flags.bits.retain;
-    c->lwt.qos = req->v.willtopic.flags.bits.qos;
+    c->lwt.retain = (req->v.willtopic.flags.flag & MQTT_SNF_RETAIN) ? 1 : 0;
+    c->lwt.qos = MQTT_SNF_QOS(req->v.willtopic.flags.flag);
     mqtt_str_copy(&c->lwt.topic, &req->v.willtopic.topic_name);
 
     mqtt_sn_packet_init(&res, MQTT_SN_WILLMSGREQ);
@@ -796,8 +805,8 @@ static int
 mqtt_sn_on_willtopicupd(mqtt_sn_client_t *c, mqtt_sn_packet_t *req) {
     mqtt_sn_packet_t res;
 
-    c->lwt.retain = req->v.willtopicupd.flags.bits.retain;
-    c->lwt.qos = req->v.willtopicupd.flags.bits.qos;
+    c->lwt.retain = (req->v.willtopicupd.flags.flag & MQTT_SNF_RETAIN) ? 1 : 0;
+    c->lwt.qos = MQTT_SNF_QOS(req->v.willtopicupd.flags.flag);
 
     mqtt_str_free(&c->lwt.topic);
     mqtt_str_copy(&c->lwt.topic, &req->v.willtopicupd.topic_name);
@@ -874,17 +883,18 @@ mqtt_sn_on_publish(mqtt_sn_client_t *c, mqtt_sn_packet_t *req) {
         return _gateway_unicast(c, &res);
     }
 
-    if (req->v.publish.flags.bits.qos == MQTT_SN_QOS_1 || req->v.publish.flags.bits.qos == MQTT_SN_QOS_2) {
+    if (MQTT_SNF_QOS(req->v.publish.flags.flag) == MQTT_SN_QOS_1 ||
+        MQTT_SNF_QOS(req->v.publish.flags.flag) == MQTT_SN_QOS_2) {
         mqtt_sn_topic_set(&t, &req->v.publish.topic);
         _client_add_padding(c, req->v.publish.msg_id, &t);
     }
 
     mqtt_packet_init(&pkt, G.broker.version, MQTT_PUBLISH);
-    pkt.f.bits.dup = req->v.publish.flags.bits.dup;
-    if (req->v.publish.flags.bits.qos == MQTT_SN_QOS_3)
-        pkt.f.bits.qos = MQTT_QOS_0;
-    else
-        pkt.f.bits.qos = req->v.publish.flags.bits.qos;
+    pkt.f.flags = MQTT_FH_BUILD(MQTT_PUBLISH, (req->v.publish.flags.flag & MQTT_SNF_DUP) ? 1 : 0,
+                                MQTT_SNF_QOS(req->v.publish.flags.flag) == MQTT_SN_QOS_3
+                                    ? MQTT_QOS_0
+                                    : (mqtt_qos_t)MQTT_SNF_QOS(req->v.publish.flags.flag),
+                                0);
     pkt.v.publish.packet_id = req->v.publish.msg_id;
     mqtt_str_set(&pkt.v.publish.topic_name, &topic_name);
     mqtt_str_set(&pkt.p.publish.message, &req->v.publish.data);
@@ -981,7 +991,7 @@ mqtt_sn_on_subscribe(mqtt_sn_client_t *c, mqtt_sn_packet_t *req) {
     pkt.v.subscribe.packet_id = req->v.subscribe.msg_id;
     mqtt_subscribe_generate(&pkt, 1);
     mqtt_str_set(&pkt.p.subscribe.topic_filters[0], &topic_name);
-    pkt.p.subscribe.options[0].bits.qos = req->v.subscribe.flags.bits.qos;
+    pkt.p.subscribe.options[0].flags = (uint8_t)(MQTT_SNF_QOS(req->v.subscribe.flags.flag) & MQTT_SUBOPT_QOS_MASK);
 
     return _broker_send(c->mc, &pkt);
 }
@@ -1006,6 +1016,8 @@ mqtt_sn_on_unsubscribe(mqtt_sn_client_t *c, mqtt_sn_packet_t *req) {
         short_name[1] = req->v.unsubscribe.topic.shor[1];
         short_name[2] = '\0';
         mqtt_str_from(&topic_name, short_name);
+        break;
+    default:
         break;
     }
 
@@ -1141,7 +1153,7 @@ _gateway_on_read(uv_udp_t *handle, ssize_t nread, const uv_buf_t *buf, const str
     while ((rc = mqtt_sn_parse(&c->parser, &b, &req)) > 0) {
         c->t_last = G.t.now;
         rc = _gateway_handle(c, &req);
-        mqtt_sn_packet_unit(&req);
+        mqtt_sn_packet_cleanup(&req);
         if (rc) {
             break;
         }
@@ -1269,7 +1281,7 @@ main(int argc, char *argv[]) {
         LOG_E("udp init : %s", G.host, G.port, uv_strerror(rc));
         return EXIT_FAILURE;
     }
-    rc = uv_udp_bind(&udp, (const struct sockaddr *)&addr, 0);
+    rc = uv_udp_bind(&udp, (const struct sockaddr *)&addr, UV_UDP_REUSEADDR);
     if (rc) {
         LOG_E("bind %s:%d : %s", G.host, G.port, uv_strerror(rc));
         return EXIT_FAILURE;

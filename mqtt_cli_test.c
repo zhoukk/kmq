@@ -19,7 +19,7 @@ _connack(mqtt_cli_t *m, void *ud, const mqtt_packet_t *pkt) {
         printf("connect %s\n", mqtt_crc_name(pkt->v.connack.v4.return_code));
         return;
     }
-    printf("connack sp:%" PRIu8 "\n", pkt->v.connack.v4.acknowledge_flags.bits.session_present);
+    printf("connack sp:%" PRIu8 "\n", (uint8_t)(pkt->v.connack.v4.acknowledge_flags.flags & MQTT_ACK_SESSION_PRESENT));
     if (!mqtt_cli_subscribe(m, 1, &topic, &qos, &packet_id)) {
         printf("send subscribe (id:%" PRIu16 ") ok\n", packet_id);
     }

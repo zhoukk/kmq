@@ -582,9 +582,9 @@ mqtt_message_create(mqtt_broker_t *b, mqtt_session_t *s, mqtt_packet_t *pkt) {
     memset(msg, 0, sizeof *msg);
 
     if (pkt) {
-        msg->dup = pkt->f.bits.dup;
-        msg->retain = pkt->f.bits.retain;
-        msg->qos = pkt->f.bits.qos;
+        msg->dup = MQTT_FH_DUP(pkt->f.flags);
+        msg->retain = MQTT_FH_RETAIN(pkt->f.flags);
+        msg->qos = MQTT_FH_QOS(pkt->f.flags);
         mqtt_str_copy(&msg->topic_name, &pkt->v.publish.topic_name);
         mqtt_str_copy(&msg->payload, &pkt->p.publish.message);
         mqtt_message_props_extract(msg, b, pkt);
@@ -646,8 +646,8 @@ mqtt_lwt_create(mqtt_session_t *s, mqtt_packet_t *pkt) {
     memset(msg, 0, sizeof *msg);
 
     msg->dup = 0;
-    msg->retain = pkt->v.connect.connect_flags.bits.will_retain;
-    msg->qos = pkt->v.connect.connect_flags.bits.will_qos;
+    msg->retain = (pkt->v.connect.connect_flags & MQTT_CF_WILL_RETAIN) ? 1 : 0;
+    msg->qos = MQTT_CF_WILL_QOS(pkt->v.connect.connect_flags);
     mqtt_str_copy(&msg->topic_name, &pkt->p.connect.will_topic);
     mqtt_str_copy(&msg->payload, &pkt->p.connect.will_message);
     mqtt_str_copy(&msg->client_id, &s->client_id);
@@ -858,7 +858,7 @@ mqtt_client_send(mqtt_client_t *c, mqtt_packet_t *pkt) {
         return -1;
     }
     rc = mqtt_serialize(pkt, &b);
-    mqtt_packet_unit(pkt);
+    mqtt_packet_cleanup(pkt);
     if (!rc) {
         logger_print(logger_default(), LOG_LEVEL_DEBUG, "send:\n");
         logger_print(logger_default(), LOG_LEVEL_DEBUG, "++++++++++++++++++++++++++++++++++++++++++++++++++\n");
@@ -888,7 +888,7 @@ mqtt_client_disconnect(mqtt_client_t *c, uint8_t reason_code) {
     mqtt_packet_t pkt;
 
     memset(&pkt, 0, sizeof(pkt));
-    pkt.f.bits.type = MQTT_DISCONNECT;
+    pkt.f.flags = MQTT_FH_BUILD(MQTT_DISCONNECT, 0, 0, 0);
     pkt.v.disconnect.v5.reason_code = reason_code;
 
     /* server-initiated disconnect: the will is not published */
@@ -1162,8 +1162,7 @@ mqtt_session_publish(mqtt_broker_t *b, mqtt_session_t *s, mqtt_message_t *msg, m
     }
 
     mqtt_packet_init(&res, c->parser.version, MQTT_PUBLISH);
-    res.f.bits.retain = retain;
-    res.f.bits.qos = qos;
+    res.f.flags = MQTT_FH_BUILD(MQTT_PUBLISH, 0, qos, retain);
     res.v.publish.packet_id = packet_id;
     mqtt_str_set(&res.v.publish.topic_name, &msg->topic_name);
     mqtt_str_set(&res.p.publish.message, &msg->payload);
@@ -1195,7 +1194,8 @@ mqtt_session_publish(mqtt_broker_t *b, mqtt_session_t *s, mqtt_message_t *msg, m
 
     LOG_I("[%.*s] sending PUBLISH (id: %" PRIu16 ", dup: %" PRIu8 ", retain: %" PRIu8 ", qos: %" PRIu8
           ", topic_name: %.*s, ...(%d bytes))",
-          MQTT_STR_PRINT(s->client_id), res.v.publish.packet_id, res.f.bits.dup, res.f.bits.retain, res.f.bits.qos,
+          MQTT_STR_PRINT(s->client_id), res.v.publish.packet_id, MQTT_FH_DUP(res.f.flags),
+          MQTT_FH_RETAIN(res.f.flags), MQTT_FH_QOS(res.f.flags),
           MQTT_STR_PRINT(res.v.publish.topic_name), res.p.publish.message.n);
     if (res.ver == MQTT_VERSION_5) {
         LOG_PROP(&res.v.publish.v5.properties);
@@ -1234,9 +1234,7 @@ mqtt_publication_resend_publish(mqtt_broker_t *b, mqtt_session_t *s, mqtt_public
     }
 
     mqtt_packet_init(&res, c->parser.version, MQTT_PUBLISH);
-    res.f.bits.dup = 1;
-    res.f.bits.retain = pub->retain;
-    res.f.bits.qos = pub->qos;
+    res.f.flags = MQTT_FH_BUILD(MQTT_PUBLISH, 1, pub->qos, pub->retain);
     res.v.publish.packet_id = pub->packet_id;
     mqtt_str_set(&res.v.publish.topic_name, &pub->msg->topic_name);
     mqtt_str_set(&res.p.publish.message, &pub->msg->payload);
@@ -2679,21 +2677,23 @@ mqtt_on_connect(mqtt_broker_t *b, mqtt_client_t *c, mqtt_packet_t *req, mqtt_pac
 
     LOG_I("[%.*s] received CONNECT (id: %.*s, v: %s, c: %" PRIu8 ", k: %" PRIu16 ", u: %.*s, p: %.*s)",
           MQTT_STR_PRINT(req->p.connect.client_id), MQTT_STR_PRINT(req->p.connect.client_id),
-          mqtt_version_name(req->v.connect.protocol_version), req->v.connect.connect_flags.bits.clean_session,
+          mqtt_version_name(req->v.connect.protocol_version),
+          (req->v.connect.connect_flags & MQTT_CF_CLEAN_SESSION) ? 1 : 0,
           req->v.connect.keep_alive, MQTT_STR_PRINT(req->p.connect.username), MQTT_STR_PRINT(req->p.connect.password));
-    if (req->v.connect.connect_flags.bits.will_flag) {
-        LOG_I("\tLWT (retain: %d, topic: %.*s, qos: %d, message: %.*s)", req->v.connect.connect_flags.bits.will_retain,
-              MQTT_STR_PRINT(req->p.connect.will_topic), req->v.connect.connect_flags.bits.will_qos,
+    if (req->v.connect.connect_flags & MQTT_CF_WILL_FLAG) {
+        LOG_I("\tLWT (retain: %d, topic: %.*s, qos: %d, message: %.*s)",
+              (req->v.connect.connect_flags & MQTT_CF_WILL_RETAIN) ? 1 : 0,
+              MQTT_STR_PRINT(req->p.connect.will_topic), MQTT_CF_WILL_QOS(req->v.connect.connect_flags),
               MQTT_STR_PRINT(req->p.connect.will_message));
     }
     if (req->ver == MQTT_VERSION_5) {
-        if (req->v.connect.connect_flags.bits.will_flag) {
+        if (req->v.connect.connect_flags & MQTT_CF_WILL_FLAG) {
             LOG_PROP(&req->p.connect.v5.will_properties);
         }
         LOG_PROP(&req->v.connect.v5.properties);
     }
 
-    res->f.bits.type = MQTT_CONNACK;
+    res->f.flags = MQTT_FH_BUILD(MQTT_CONNACK, 0, 0, 0);
 
     switch (req->ver) {
     case MQTT_VERSION_3:
@@ -2703,7 +2703,7 @@ mqtt_on_connect(mqtt_broker_t *b, mqtt_client_t *c, mqtt_packet_t *req, mqtt_pac
         }
         break;
     case MQTT_VERSION_4:
-        if (req->v.connect.connect_flags.bits.clean_session == 0 && req->p.connect.client_id.n == 0) {
+        if (!(req->v.connect.connect_flags & MQTT_CF_CLEAN_SESSION) && req->p.connect.client_id.n == 0) {
             res->v.connack.v4.return_code = MQTT_CRC_REFUSED_IDENTIFIER_REJECTED;
             goto e;
         }
@@ -2735,15 +2735,15 @@ mqtt_on_connect(mqtt_broker_t *b, mqtt_client_t *c, mqtt_packet_t *req, mqtt_pac
                 s->c->s = 0;
                 s->c = 0;
             }
-            if (!req->v.connect.connect_flags.bits.clean_session) {
+            if (!(req->v.connect.connect_flags & MQTT_CF_CLEAN_SESSION)) {
                 switch (req->ver) {
                 case MQTT_VERSION_3:
                     break;
                 case MQTT_VERSION_4:
-                    res->v.connack.v4.acknowledge_flags.bits.session_present = 1;
+                    res->v.connack.v4.acknowledge_flags.flags |= MQTT_ACK_SESSION_PRESENT;
                     break;
                 case MQTT_VERSION_5:
-                    res->v.connack.v5.acknowledge_flags.bits.session_present = 1;
+                    res->v.connack.v5.acknowledge_flags.flags |= MQTT_ACK_SESSION_PRESENT;
                     break;
                 }
             } else {
@@ -2777,7 +2777,7 @@ mqtt_on_connect(mqtt_broker_t *b, mqtt_client_t *c, mqtt_packet_t *req, mqtt_pac
         goto e;
     }
 
-    c->clean_session = req->v.connect.connect_flags.bits.clean_session;
+    c->clean_session = (req->v.connect.connect_flags & MQTT_CF_CLEAN_SESSION) ? 1 : 0;
     c->ver = req->ver;
     c->keep_alive = req->v.connect.keep_alive;
     mqtt_str_copy(&c->username, &req->p.connect.username);
@@ -2821,7 +2821,7 @@ mqtt_on_connect(mqtt_broker_t *b, mqtt_client_t *c, mqtt_packet_t *req, mqtt_pac
         s->lwt = 0;
     }
     s->will_delay = 0;
-    if (req->v.connect.connect_flags.bits.will_flag) {
+    if (req->v.connect.connect_flags & MQTT_CF_WILL_FLAG) {
         s->lwt = mqtt_lwt_create(s, req);
         if (req->ver == MQTT_VERSION_5) {
             mqtt_property_t *prop;
@@ -2871,12 +2871,14 @@ e:
         break;
     case MQTT_VERSION_4:
         LOG_I("[%.*s] sending CONNACK (sp: %" PRIu8 ", rc: 0x%02X %s)", MQTT_STR_PRINT(client_id),
-              res->v.connack.v4.acknowledge_flags.bits.session_present, res->v.connack.v4.return_code,
+              (uint8_t)(res->v.connack.v4.acknowledge_flags.flags & MQTT_ACK_SESSION_PRESENT),
+              res->v.connack.v4.return_code,
               mqtt_crc_name(res->v.connack.v4.return_code));
         break;
     case MQTT_VERSION_5:
         LOG_I("[%.*s] sending CONNACK (sp: %" PRIu8 ", rc: 0x%02X %s)", MQTT_STR_PRINT(client_id),
-              res->v.connack.v5.acknowledge_flags.bits.session_present, res->v.connack.v5.reason_code,
+              (uint8_t)(res->v.connack.v5.acknowledge_flags.flags & MQTT_ACK_SESSION_PRESENT),
+              res->v.connack.v5.reason_code,
               mqtt_rc_name(res->v.connack.v5.reason_code));
         LOG_PROP(&res->v.connack.v5.properties);
         break;
@@ -2915,13 +2917,13 @@ mqtt_on_auth(mqtt_broker_t *b, mqtt_client_t *c, mqtt_packet_t *req, mqtt_packet
                               b->auth_ud);
         if (rc != 0) {
             LOG_W("[%.*s] AUTH rejected by callback", MQTT_STR_PRINT(s->client_id));
-            mqtt_packet_unit(res);
+            mqtt_packet_cleanup(res);
             mqtt_client_disconnect(c, MQTT_RC_NOT_AUTHORIZED);
             return -1;
         }
     }
 
-    res->f.bits.type = MQTT_AUTH;
+    res->f.flags = MQTT_FH_BUILD(MQTT_AUTH, 0, 0, 0);
     res->v.auth.v5.reason_code = MQTT_RC_SUCCESS;
 
     LOG_I("[%.*s] sending AUTH (rc: 0x00 %s)", MQTT_STR_PRINT(s->client_id), mqtt_rc_name(MQTT_RC_SUCCESS));
@@ -2958,7 +2960,8 @@ mqtt_on_publish(mqtt_broker_t *b, mqtt_client_t *c, mqtt_packet_t *req, mqtt_pac
 
     LOG_I("[%.*s] received PUBLISH (id: %" PRIu16 ", qos: %" PRIu8 ", retain: %" PRIu8 ", dup: %" PRIu8
           ", topic_name: %.*s, ...(%zu bytes))",
-          MQTT_STR_PRINT(s->client_id), req->v.publish.packet_id, req->f.bits.qos, req->f.bits.retain, req->f.bits.dup,
+          MQTT_STR_PRINT(s->client_id), req->v.publish.packet_id, MQTT_FH_QOS(req->f.flags),
+          MQTT_FH_RETAIN(req->f.flags), MQTT_FH_DUP(req->f.flags),
           MQTT_STR_PRINT(req->v.publish.topic_name), req->p.publish.message.n);
     if (req->ver == MQTT_VERSION_5) {
         LOG_PROP(&req->v.publish.v5.properties);
@@ -2975,8 +2978,8 @@ mqtt_on_publish(mqtt_broker_t *b, mqtt_client_t *c, mqtt_packet_t *req, mqtt_pac
             if (alias == 0 || alias > s->in_alias_max) {
                 LOG_W("[%.*s] invalid topic alias %" PRIu16 " (max %" PRIu16 ")", MQTT_STR_PRINT(s->client_id), alias,
                       s->in_alias_max);
-                if (req->f.bits.qos > MQTT_QOS_0) {
-                    res->f.bits.type = MQTT_PUBACK;
+                if (MQTT_FH_QOS(req->f.flags) > MQTT_QOS_0) {
+                    res->f.flags = MQTT_FH_BUILD(MQTT_PUBACK, 0, 0, 0);
                     res->v.puback.packet_id = req->v.publish.packet_id;
                     res->v.puback.v5.reason_code = MQTT_RC_TOPIC_ALIAS_INVALID;
                 }
@@ -2990,8 +2993,8 @@ mqtt_on_publish(mqtt_broker_t *b, mqtt_client_t *c, mqtt_packet_t *req, mqtt_pac
                 ae = mqtt_session_alias_in_lookup(s, alias);
                 if (!ae) {
                     LOG_W("[%.*s] unknown topic alias %" PRIu16, MQTT_STR_PRINT(s->client_id), alias);
-                    if (req->f.bits.qos > MQTT_QOS_0) {
-                        res->f.bits.type = MQTT_PUBACK;
+                    if (MQTT_FH_QOS(req->f.flags) > MQTT_QOS_0) {
+                        res->f.flags = MQTT_FH_BUILD(MQTT_PUBACK, 0, 0, 0);
                         res->v.puback.packet_id = req->v.publish.packet_id;
                         res->v.puback.v5.reason_code = MQTT_RC_TOPIC_ALIAS_INVALID;
                     }
@@ -3019,7 +3022,7 @@ mqtt_on_publish(mqtt_broker_t *b, mqtt_client_t *c, mqtt_packet_t *req, mqtt_pac
     }
 
     msg = 0;
-    if (req->f.bits.qos > MQTT_QOS_0) {
+    if (MQTT_FH_QOS(req->f.flags) > MQTT_QOS_0) {
         msg = mqtt_session_incoming_message(s, req->v.publish.packet_id);
     }
     if (!msg) {
@@ -3033,16 +3036,16 @@ mqtt_on_publish(mqtt_broker_t *b, mqtt_client_t *c, mqtt_packet_t *req, mqtt_pac
         mqtt_broker_dispatch(b, msg);
     }
 
-    switch (req->f.bits.qos) {
+    switch (MQTT_FH_QOS(req->f.flags)) {
     case MQTT_QOS_0:
         break;
     case MQTT_QOS_1:
-        res->f.bits.type = MQTT_PUBACK;
+        res->f.flags = MQTT_FH_BUILD(MQTT_PUBACK, 0, 0, 0);
         res->v.puback.packet_id = req->v.publish.packet_id;
         LOG_I("[%.*s] sending PUBACK (id: %" PRIu16 ")", MQTT_STR_PRINT(s->client_id), res->v.puback.packet_id);
         break;
     case MQTT_QOS_2:
-        res->f.bits.type = MQTT_PUBREC;
+        res->f.flags = MQTT_FH_BUILD(MQTT_PUBREC, 0, 0, 0);
         res->v.pubrec.packet_id = req->v.publish.packet_id;
         if (!dup) {
             mqtt_publication_t *pub;
@@ -3103,7 +3106,7 @@ mqtt_on_pubrec(mqtt_broker_t *b, mqtt_client_t *c, mqtt_packet_t *req, mqtt_pack
         break;
     }
 
-    res->f.bits.type = MQTT_PUBREL;
+    res->f.flags = MQTT_FH_BUILD(MQTT_PUBREL, 0, 1, 0);
     res->v.pubrel.packet_id = req->v.pubrec.packet_id;
 
     if (mqtt_session_outgoing_update(b, s, req->v.pubrec.packet_id, MQTT_PUBLICATION_STATE_REC,
@@ -3137,7 +3140,7 @@ mqtt_on_pubrel(mqtt_broker_t *b, mqtt_client_t *c, mqtt_packet_t *req, mqtt_pack
         break;
     }
 
-    res->f.bits.type = MQTT_PUBCOMP;
+    res->f.flags = MQTT_FH_BUILD(MQTT_PUBCOMP, 0, 0, 0);
     res->v.pubcomp.packet_id = req->v.pubrel.packet_id;
 
     if (mqtt_session_incoming_discard(s, req->v.pubrel.packet_id) && req->ver == MQTT_VERSION_5) {
@@ -3185,7 +3188,7 @@ mqtt_on_subscribe(mqtt_broker_t *b, mqtt_client_t *c, mqtt_packet_t *req, mqtt_p
     }
     LOG_I("[%.*s] received SUBSCRIBE (id: %" PRIu16 ")", MQTT_STR_PRINT(s->client_id), req->v.subscribe.packet_id);
 
-    res->f.bits.type = MQTT_SUBACK;
+    res->f.flags = MQTT_FH_BUILD(MQTT_SUBACK, 0, 0, 0);
     res->v.suback.packet_id = req->v.subscribe.packet_id;
     if (mqtt_suback_generate(res, req->p.subscribe.n)) {
         return -1;
@@ -3200,14 +3203,14 @@ mqtt_on_subscribe(mqtt_broker_t *b, mqtt_client_t *c, mqtt_packet_t *req, mqtt_p
         topic_filter = req->p.subscribe.topic_filters[i];
         share_group = (mqtt_str_t){0};
         actual_filter = topic_filter;
-        requested_qos = req->p.subscribe.options[i].bits.qos;
+        requested_qos = (mqtt_qos_t)(req->p.subscribe.options[i].flags & MQTT_SUBOPT_QOS_MASK);
 
         if (req->ver == MQTT_VERSION_5) {
             mqtt_property_t *prop;
 
-            nl = req->p.subscribe.options[i].bits.nl;
-            rap = req->p.subscribe.options[i].bits.rap;
-            retain_handling = req->p.subscribe.options[i].bits.retain_handling;
+            nl = (req->p.subscribe.options[i].flags & MQTT_SUBOPT_NL) ? 1 : 0;
+            rap = (req->p.subscribe.options[i].flags & MQTT_SUBOPT_RAP) ? 1 : 0;
+            retain_handling = MQTT_SUBOPT_RH(req->p.subscribe.options[i].flags);
             prop = mqtt_properties_find(&req->v.subscribe.v5.properties, MQTT_PROPERTY_SUBSCRIPTION_IDENTIFIER);
             if (prop) {
                 sub_id = prop->bv;
@@ -3243,7 +3246,7 @@ mqtt_on_subscribe(mqtt_broker_t *b, mqtt_client_t *c, mqtt_packet_t *req, mqtt_p
             } else {
                 /* v3.x: entire SUBSCRIBE fails with 0x80 (Malformed Packet) */
                 mqtt_client_disconnect(c, MQTT_RC_MALFORMED_PACKET);
-                mqtt_packet_unit(res);
+                mqtt_packet_cleanup(res);
                 return -1;
             }
             continue;
@@ -3256,7 +3259,7 @@ mqtt_on_subscribe(mqtt_broker_t *b, mqtt_client_t *c, mqtt_packet_t *req, mqtt_p
                 res->p.suback.v5.reason_codes[i] = MQTT_RC_NOT_AUTHORIZED;
             } else {
                 mqtt_client_disconnect(c, MQTT_RC_NOT_AUTHORIZED);
-                mqtt_packet_unit(res);
+                mqtt_packet_cleanup(res);
                 return -1;
             }
             continue;
@@ -3267,7 +3270,7 @@ mqtt_on_subscribe(mqtt_broker_t *b, mqtt_client_t *c, mqtt_packet_t *req, mqtt_p
 
         switch (req->ver) {
         case MQTT_VERSION_3:
-            res->p.suback.v3.granted[i].bits.qos = granted_qos;
+            res->p.suback.v3.granted[i].flags = (uint8_t)(granted_qos & MQTT_SUBOPT_QOS_MASK);
             break;
         case MQTT_VERSION_4:
             res->p.suback.v4.return_codes[i] = mqtt_src_from_qos(granted_qos);
@@ -3286,7 +3289,7 @@ mqtt_on_subscribe(mqtt_broker_t *b, mqtt_client_t *c, mqtt_packet_t *req, mqtt_p
     for (i = 0; i < res->p.suback.n; i++) {
         switch (req->ver) {
         case MQTT_VERSION_3:
-            LOG_I("\tqos: %d", res->p.suback.v3.granted[i].bits.qos);
+            LOG_I("\tqos: %d", res->p.suback.v3.granted[i].flags & MQTT_SUBOPT_QOS_MASK);
             break;
         case MQTT_VERSION_4:
             LOG_I("\trc: 0x%02X %s", res->p.suback.v4.return_codes[i], mqtt_src_name(res->p.suback.v4.return_codes[i]));
@@ -3311,7 +3314,7 @@ mqtt_on_unsubscribe(mqtt_broker_t *b, mqtt_client_t *c, mqtt_packet_t *req, mqtt
     }
     LOG_I("[%.*s] received UNSUBSCRIBE (id: %" PRIu16 ")", MQTT_STR_PRINT(s->client_id), req->v.unsubscribe.packet_id);
 
-    res->f.bits.type = MQTT_UNSUBACK;
+    res->f.flags = MQTT_FH_BUILD(MQTT_UNSUBACK, 0, 0, 0);
     res->v.unsuback.packet_id = req->v.unsubscribe.packet_id;
     mqtt_unsuback_generate(res, req->p.unsubscribe.n);
 
@@ -3353,7 +3356,7 @@ mqtt_on_pingreq(mqtt_broker_t *b, mqtt_client_t *c, mqtt_packet_t *req, mqtt_pac
     }
     LOG_I("[%.*s] received PINGREQ", MQTT_STR_PRINT(s->client_id));
 
-    res->f.bits.type = MQTT_PINGRESP;
+    res->f.flags = MQTT_FH_BUILD(MQTT_PINGRESP, 0, 0, 0);
 
     LOG_I("[%.*s] sending PINGRESP", MQTT_STR_PRINT(s->client_id));
     return 0;
@@ -3409,7 +3412,7 @@ static int
 mqtt_client_handle(mqtt_broker_t *b, mqtt_client_t *c, mqtt_packet_t *req, mqtt_packet_t *res) {
     int rc;
 
-    switch (req->f.bits.type) {
+    switch (MQTT_FH_TYPE(req->f.flags)) {
     case MQTT_CONNECT:
         rc = mqtt_on_connect(b, c, req, res);
         break;
@@ -3472,10 +3475,10 @@ mqtt_client_data(mqtt_client_t *c, const char *data, ssize_t size) {
         c->t_last = b->t_now;
 
         rc = mqtt_client_handle(b, c, &req, &res);
-        if (!rc && MQTT_IS_PACKET_TYPE(res.f.bits.type)) {
+        if (!rc && MQTT_IS_PACKET_TYPE(MQTT_FH_TYPE(res.f.flags))) {
             rc = mqtt_client_send(c, &res);
         }
-        mqtt_packet_unit(&req);
+        mqtt_packet_cleanup(&req);
         if (rc) {
             break;
         }
@@ -3537,7 +3540,7 @@ mqtt_client_destroy(mqtt_client_t *c) {
     if (c->tls) {
         tls_destroy(c->tls);
     }
-    mqtt_parser_unit(&c->parser);
+    mqtt_parser_cleanup(&c->parser);
     mqtt_str_free(&c->buff);
     mqtt_str_free(&c->username);
 

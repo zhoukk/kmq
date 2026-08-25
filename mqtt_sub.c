@@ -291,7 +291,7 @@ static void
 _publish(mqtt_cli_t *m, void *ud, const mqtt_packet_t *pkt) {
     (void)ud;
 
-    if (pkt->f.bits.retain == 1 && no_retain == 1)
+    if (MQTT_FH_RETAIN(pkt->f.flags) == 1 && no_retain == 1)
         return;
     if (verbose) {
         if (pkt->p.publish.message.n) {

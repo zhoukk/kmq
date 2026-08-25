@@ -45,7 +45,7 @@ cmake -B build && cmake --build build
 - `[listener-<id>]` mode=`tcp`|`tls`|`ws`|`wss`, host, port, cert, key, auth, api —
   multiple listeners per broker (this replaced the removed `mqtt_proxy`). `auth`/`api`
   override the global `[auth]` for that listener.
-- `[limit]` max_connections, max_packet_size (bytes, parser-enforced),
+- `[limit]` max_connections,
   rate_limit (PUBLISH msg/s per client, 0 = off; violation disconnects the client),
   max_write_pending (per-client socket write-queue bytes before backpressure, 0 = off)
 - `[debug]` trie_dump=1 — dump the subscription trie on sub/unsub/retain

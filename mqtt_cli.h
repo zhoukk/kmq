@@ -217,7 +217,9 @@ _check_padding(mqtt_cli_t *m) {
             if (--mp->ttl > 0) {
                 mp->wait_ack = 0;
                 if (mp->type == MQTT_PUBLISH) {
-                    ((mqtt_fixed_header_t *)mp->b.s)->bits.dup = 1;
+                    mqtt_fixed_header_t *fh = (mqtt_fixed_header_t *)mp->b.s;
+                    fh->flags = MQTT_FH_BUILD(MQTT_FH_TYPE(fh->flags), 1, MQTT_FH_QOS(fh->flags),
+                                              MQTT_FH_RETAIN(fh->flags));
                 }
                 pmp = &mp->next;
             } else {
@@ -288,13 +290,13 @@ _append_padding(mqtt_cli_t *m, mqtt_packet_t *pkt) {
             return -1;
         }
         memset(mp, 0, sizeof *mp);
-        mp->type = (mqtt_packet_type_t)pkt->f.bits.type;
+        mp->type = (mqtt_packet_type_t)MQTT_FH_TYPE(pkt->f.flags);
         mqtt_str_set(&mp->b, &b);
         mp->t_send = m->t.now;
-        switch (pkt->f.bits.type) {
+        switch (MQTT_FH_TYPE(pkt->f.flags)) {
         case MQTT_PUBLISH:
             mp->packet_id = pkt->v.publish.packet_id;
-            if (pkt->f.bits.qos > MQTT_QOS_0)
+            if (MQTT_FH_QOS(pkt->f.flags) > MQTT_QOS_0)
                 mp->ttl = MQTT_CLI_PACKET_TTL;
             break;
         case MQTT_PUBREL:
@@ -321,7 +323,7 @@ _append_padding(mqtt_cli_t *m, mqtt_packet_t *pkt) {
     } else {
         mqtt_str_free(&b);
     }
-    mqtt_packet_unit(pkt);
+    mqtt_packet_cleanup(pkt);
 
     return rc;
 }
@@ -356,7 +358,7 @@ _handle_packet(mqtt_cli_t *m, mqtt_packet_t *pkt) {
     int rc;
 
     rc = 0;
-    switch (pkt->f.bits.type) {
+    switch (MQTT_FH_TYPE(pkt->f.flags)) {
     case MQTT_CONNACK:
         if (m->cb.connack) {
             m->cb.connack(m, m->ud, pkt);
@@ -366,7 +368,7 @@ _handle_packet(mqtt_cli_t *m, mqtt_packet_t *pkt) {
         if (m->cb.publish) {
             m->cb.publish(m, m->ud, pkt);
         }
-        switch (pkt->f.bits.qos) {
+        switch (MQTT_FH_QOS(pkt->f.flags)) {
         case MQTT_QOS_1:
             rc = _send_puback(m, MQTT_PUBACK, pkt->v.publish.packet_id);
             break;
@@ -489,21 +491,24 @@ mqtt_cli_connect(mqtt_cli_t *m) {
     mqtt_packet_t pkt;
 
     mqtt_packet_init(&pkt, m->version, MQTT_CONNECT);
-    pkt.v.connect.connect_flags.bits.clean_session = m->clean_session;
+    if (m->clean_session)
+        pkt.v.connect.connect_flags |= MQTT_CF_CLEAN_SESSION;
     pkt.v.connect.keep_alive = m->keep_alive;
     mqtt_str_set(&pkt.p.connect.client_id, &m->client_id);
     if (!mqtt_str_empty(&m->auth.username)) {
-        pkt.v.connect.connect_flags.bits.username_flag = 1;
+        pkt.v.connect.connect_flags |= MQTT_CF_USERNAME;
         pkt.p.connect.username = m->auth.username;
     }
     if (!mqtt_str_empty(&m->auth.password)) {
-        pkt.v.connect.connect_flags.bits.password_flag = 1;
+        pkt.v.connect.connect_flags |= MQTT_CF_PASSWORD;
         pkt.p.connect.password = m->auth.password;
     }
     if (!mqtt_str_empty(&m->lwt.topic)) {
-        pkt.v.connect.connect_flags.bits.will_flag = 1;
-        pkt.v.connect.connect_flags.bits.will_retain = m->lwt.retain;
-        pkt.v.connect.connect_flags.bits.will_qos = m->lwt.qos;
+        pkt.v.connect.connect_flags |= MQTT_CF_WILL_FLAG;
+        if (m->lwt.retain)
+            pkt.v.connect.connect_flags |= MQTT_CF_WILL_RETAIN;
+        pkt.v.connect.connect_flags =
+            (uint8_t)((pkt.v.connect.connect_flags & ~MQTT_CF_WILL_QOS_MASK) | ((m->lwt.qos & 0x03) << 3));
         pkt.p.connect.will_topic = m->lwt.topic;
         pkt.p.connect.will_message = m->lwt.message;
     }
@@ -517,8 +522,7 @@ mqtt_cli_publish(mqtt_cli_t *m, int retain, const char *topic, mqtt_qos_t qos, m
     mqtt_packet_t pkt;
 
     mqtt_packet_init(&pkt, m->version, MQTT_PUBLISH);
-    pkt.f.bits.retain = retain;
-    pkt.f.bits.qos = qos;
+    pkt.f.flags = MQTT_FH_BUILD(MQTT_PUBLISH, 0, qos, retain);
     if (qos > MQTT_QOS_0) {
         pkt.v.publish.packet_id = _generate_packet_id(m);
     }
@@ -542,7 +546,7 @@ mqtt_cli_subscribe(mqtt_cli_t *m, int count, const char *topic[], mqtt_qos_t qos
         return -1;
     for (i = 0; i < count; i++) {
         mqtt_str_from(&pkt.p.subscribe.topic_filters[i], topic[i]);
-        pkt.p.subscribe.options[i].bits.qos = qos[i];
+        pkt.p.subscribe.options[i].flags = (uint8_t)(qos[i] & MQTT_SUBOPT_QOS_MASK);
     }
     if (packet_id) {
         *packet_id = pkt.v.subscribe.packet_id;
@@ -644,7 +648,7 @@ mqtt_cli_incoming(mqtt_cli_t *m, mqtt_str_t *incoming) {
 
     while ((rc = mqtt_parse(&m->parser, incoming, &pkt)) > 0) {
         rc = _handle_packet(m, &pkt);
-        mqtt_packet_unit(&pkt);
+        mqtt_packet_cleanup(&pkt);
         if (rc)
             break;
     }

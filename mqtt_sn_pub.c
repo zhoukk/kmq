@@ -568,7 +568,7 @@ main(int argc, char *argv[]) {
         .ud = 0,
     };
 
-    net = network_udp_open("0.0.0.0", port);
+    net = network_udp_open("0.0.0.0", uport);
     if (!net) {
         if (!quiet)
             fprintf(stderr, "udp open error\n");
@@ -597,6 +597,9 @@ main(int argc, char *argv[]) {
         now = network_time_now();
         mqtt_sn_cli_set_time(m, now);
         if (mqtt_sn_cli_elapsed(m)) {
+            break;
+        }
+        if (mqtt_sn_cli_state(m) == MQTT_SN_STATE_DISCONNECTED) {
             break;
         }
     }

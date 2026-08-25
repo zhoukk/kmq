@@ -132,13 +132,22 @@ main(int argc, char *argv[]) {
 
     mqtt_str_from(&message, "hello world");
 
-    net = network_udp_open("0.0.0.0", MQTT_SN_UDP_PORT);
+    /* bind an ephemeral port so the gateway can own MQTT_SN_UDP_PORT on this host. */
+    net = network_udp_open("0.0.0.0", 0);
     if (!net) {
         return EXIT_FAILURE;
     }
     config.ud = net;
 
-    network_udp_set_broadcast(net, MQTT_SN_UDP_PORT);
+    /* unicast discovery to a local gateway (broadcast is not looped back on all hosts). */
+    {
+        struct sockaddr_in gw;
+        memset(&gw, 0, sizeof(gw));
+        gw.sin_family = AF_INET;
+        gw.sin_addr.s_addr = inet_addr("127.0.0.1");
+        gw.sin_port = htons(MQTT_SN_UDP_PORT);
+        network_udp_set_unicast(net, (struct sockaddr *)&gw);
+    }
     m = mqtt_sn_cli_create(&config);
 
     mqtt_sn_cli_searchgw(m, 1);
@@ -159,6 +168,9 @@ main(int argc, char *argv[]) {
         now = network_time_now();
         mqtt_sn_cli_set_time(m, now);
         if (mqtt_sn_cli_elapsed(m)) {
+            break;
+        }
+        if (mqtt_sn_cli_state(m) == MQTT_SN_STATE_DISCONNECTED) {
             break;
         }
     }

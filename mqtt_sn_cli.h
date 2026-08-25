@@ -303,7 +303,7 @@ _append_padding(mqtt_sn_cli_t *m, mqtt_sn_packet_t *pkt) {
         }
         p->next = mp;
     }
-    mqtt_sn_packet_unit(pkt);
+    mqtt_sn_packet_cleanup(pkt);
 
     return 0;
 }
@@ -396,8 +396,7 @@ _send_willtopic(mqtt_sn_cli_t *m) {
     mqtt_sn_packet_t pkt;
 
     mqtt_sn_packet_init(&pkt, MQTT_SN_WILLTOPIC);
-    pkt.v.willtopic.flags.bits.qos = m->lwt.qos;
-    pkt.v.willtopic.flags.bits.retain = m->lwt.retain;
+    pkt.v.willtopic.flags.flag = (uint8_t)(((m->lwt.qos & 0x03) << 5) | (m->lwt.retain ? MQTT_SNF_RETAIN : 0));
     mqtt_str_set(&pkt.v.willtopic.topic_name, &m->lwt.topic);
 
     return _append_padding(m, &pkt);
@@ -484,7 +483,7 @@ _handle_packet(mqtt_sn_cli_t *m, mqtt_sn_packet_t *pkt) {
         if (m->cb.publish) {
             m->cb.publish(m, m->ud, pkt);
         }
-        switch (pkt->v.publish.flags.bits.qos) {
+        switch (MQTT_SNF_QOS(pkt->v.publish.flags.flag)) {
         case MQTT_SN_QOS_1:
             rc = _send_puback(m, MQTT_SN_PUBACK, pkt->v.publish.msg_id);
             break;
@@ -660,9 +659,10 @@ mqtt_sn_cli_connect(mqtt_sn_cli_t *m) {
     mqtt_sn_packet_init(&pkt, MQTT_SN_CONNECT);
     mqtt_str_set(&pkt.v.connect.client_id, &m->client_id);
     pkt.v.connect.duration = m->duration;
-    pkt.v.connect.flags.bits.clean_session = m->clean_session;
+    if (m->clean_session)
+        pkt.v.connect.flags.flag |= MQTT_SNF_CLEAN_SESSION;
     if (!mqtt_str_empty(&m->lwt.topic))
-        pkt.v.connect.flags.bits.will = 1;
+        pkt.v.connect.flags.flag |= MQTT_SNF_WILL;
 
     m->state = MQTT_SN_STATE_CONNECTING;
 
@@ -696,9 +696,8 @@ mqtt_sn_cli_publish(mqtt_sn_cli_t *m, int retain, mqtt_sn_topic_t *topic, mqtt_s
     }
 
     mqtt_sn_packet_init(&pkt, MQTT_SN_PUBLISH);
-    pkt.v.publish.flags.bits.retain = retain;
-    pkt.v.publish.flags.bits.qos = qos;
-    pkt.v.publish.flags.bits.topic_id_type = topic->type;
+    pkt.v.publish.flags.flag =
+        (uint8_t)((((qos & 0x03) << 5) | (retain ? MQTT_SNF_RETAIN : 0) | (topic->type & MQTT_SNF_TID_TYPE_MASK)));
     mqtt_sn_topic_set(&pkt.v.publish.topic, topic);
     mqtt_str_set(&pkt.v.publish.data, message);
 
@@ -716,8 +715,7 @@ mqtt_sn_cli_subscribe(mqtt_sn_cli_t *m, mqtt_sn_topic_t *topic, mqtt_sn_qos_t qo
     mqtt_sn_packet_t pkt;
 
     mqtt_sn_packet_init(&pkt, MQTT_SN_SUBSCRIBE);
-    pkt.v.subscribe.flags.bits.qos = qos;
-    pkt.v.subscribe.flags.bits.topic_id_type = topic->type;
+    pkt.v.subscribe.flags.flag = (uint8_t)(((qos & 0x03) << 5) | (topic->type & MQTT_SNF_TID_TYPE_MASK));
     pkt.v.subscribe.msg_id = _generate_packet_id(m);
     mqtt_sn_topic_set(&pkt.v.subscribe.topic, topic);
 
@@ -732,7 +730,7 @@ mqtt_sn_cli_unsubscribe(mqtt_sn_cli_t *m, mqtt_sn_topic_t *topic, uint16_t *pack
     mqtt_sn_packet_t pkt;
 
     mqtt_sn_packet_init(&pkt, MQTT_SN_UNSUBSCRIBE);
-    pkt.v.unsubscribe.flags.bits.topic_id_type = topic->type;
+    pkt.v.unsubscribe.flags.flag = (uint8_t)(topic->type & MQTT_SNF_TID_TYPE_MASK);
     pkt.v.unsubscribe.msg_id = _generate_packet_id(m);
     mqtt_sn_topic_set(&pkt.v.unsubscribe.topic, topic);
 
@@ -785,7 +783,7 @@ mqtt_sn_cli_outgoing(mqtt_sn_cli_t *m, mqtt_str_t *outgoing) {
         outgoing->s = MQTT_MALLOC(outgoing->n);
         if (!outgoing->s)
             return -1;
-        outgoing->n = 0;
+        outgoing->i = 0;
 
         pmp = &m->padding;
         while (*pmp) {
@@ -815,7 +813,7 @@ mqtt_sn_cli_incoming(mqtt_sn_cli_t *m, mqtt_str_t *incoming) {
 
     while ((rc = mqtt_sn_parse(&m->parser, incoming, &pkt)) > 0) {
         rc = _handle_packet(m, &pkt);
-        mqtt_sn_packet_unit(&pkt);
+        mqtt_sn_packet_cleanup(&pkt);
         if (rc)
             break;
     }
@@ -881,6 +879,11 @@ network_udp_open(const char *host, int port) {
         return 0;
     }
 
+    {
+        int reuse = 1;
+        setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+    }
+
     setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
     setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
 
@@ -934,6 +937,14 @@ network_udp_join_multicast(void *net, const char *host, int port) {
 
     udp = (network_udp_network_t *)net;
 
+    /* always set the destination first so unicast hosts keep working even if the
+     * multicast membership below fails. */
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = inet_addr(host);
+    addr.sin_port = htons(port);
+    memcpy(&udp->to_addr, &addr, sizeof(addr));
+
     on = 0;
     if (setsockopt(udp->fd, IPPROTO_IP, IP_MULTICAST_LOOP, (char *)&on, sizeof(on)) == -1) {
         fprintf(stderr, "setsockopt IP_MULTICAST_LOOP fd: %d, e: %s\n", udp->fd, strerror(errno));
@@ -946,12 +957,6 @@ network_udp_join_multicast(void *net, const char *host, int port) {
         fprintf(stderr, "setsockopt IP_ADD_MEMBERSHIP fd: %d, e: %s\n", udp->fd, strerror(errno));
         return -1;
     }
-
-    memset(&addr, 0, sizeof(addr));
-    addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = inet_addr(host);
-    addr.sin_port = htons(port);
-    memcpy(&udp->to_addr, &addr, sizeof(addr));
 
     return 0;
 }
@@ -1114,6 +1119,14 @@ network_udp_join_multicast(void *net, const char *host, int port) {
 
     udp = (network_udp_network_t *)net;
 
+    /* always set the destination first so unicast hosts keep working even if the
+     * multicast membership below fails. */
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = inet_addr(host);
+    addr.sin_port = htons(port);
+    memcpy(&udp->to_addr, &addr, sizeof(addr));
+
     on = 0;
     if (setsockopt(udp->sock, IPPROTO_IP, IP_MULTICAST_LOOP, (char *)&on, sizeof(on)) == SOCKET_ERROR) {
         fprintf(stderr, "setsockopt IP_MULTICAST_LOOP failed: %ld\n", WSAGetLastError());
@@ -1126,12 +1139,6 @@ network_udp_join_multicast(void *net, const char *host, int port) {
         fprintf(stderr, "setsockopt IP_ADD_MEMBERSHIP failed: %ld\n", WSAGetLastError());
         return -1;
     }
-
-    memset(&addr, 0, sizeof(addr));
-    addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = inet_addr(host);
-    addr.sin_port = htons(port);
-    memcpy(&udp->to_addr, &addr, sizeof(addr));
 
     return 0;
 }
