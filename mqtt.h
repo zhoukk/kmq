@@ -1786,7 +1786,7 @@ mqtt_property_value_valid(mqtt_property_code_t code, const mqtt_property_t *prop
     case MQTT_PROPERTY_SUBSCRIPTION_IDENTIFIER:
         return property->bv >= 1;
     case MQTT_PROPERTY_MAXIMUM_QOS:
-        return property->b1 <= 1;
+        return property->b1 <= 2;
     case MQTT_PROPERTY_PAYLOAD_FORMAT_INDICATOR:
     case MQTT_PROPERTY_REQUEST_RESPONSE_INFORMATION:
     case MQTT_PROPERTY_REQUEST_PROBLEM_INFORMATION:
