@@ -1,8 +1,15 @@
 #define MQTT_IMPL
 #include "mqtt.h"
 
-#include <assert.h>
 #include <time.h>
+
+#define CHECK(cond)                                                                        \
+    do {                                                                                   \
+        if (!(cond)) {                                                                     \
+            fprintf(stderr, "check failed: %s (%s:%d)\n", #cond, __FILE__, __LINE__);      \
+            exit(1);                                                                       \
+        }                                                                                  \
+    } while (0)
 
 static void
 test_mqtt() {
@@ -29,7 +36,7 @@ test_mqtt() {
         mqtt_str_from(&pkt.p.connect.password, "password");
         rc = mqtt_serialize(&pkt, &bs);
         mqtt_packet_cleanup(&pkt);
-        assert(rc == 0);
+        CHECK(rc == 0);
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
@@ -38,22 +45,22 @@ test_mqtt() {
         mqtt_parser_init(&parser);
         rc = mqtt_parse(&parser, &bp, &pkt);
 
-        assert(rc == 1);
-        assert(pkt.ver == MQTT_VERSION_3);
-        assert(MQTT_FH_TYPE(pkt.f.flags) == MQTT_CONNECT);
-        assert(pkt.v.connect.protocol_version == MQTT_VERSION_3);
-        assert(!mqtt_str_strcmp(&pkt.v.connect.protocol_name, mqtt_protocol_name(MQTT_VERSION_3)));
-        assert((pkt.v.connect.connect_flags & MQTT_CF_CLEAN_SESSION) != 0);
-        assert((pkt.v.connect.connect_flags & MQTT_CF_WILL_FLAG) != 0);
-        assert(MQTT_CF_WILL_QOS(pkt.v.connect.connect_flags) == MQTT_QOS_1);
-        assert((pkt.v.connect.connect_flags & MQTT_CF_WILL_RETAIN) != 0);
-        assert((pkt.v.connect.connect_flags & MQTT_CF_USERNAME) != 0);
-        assert((pkt.v.connect.connect_flags & MQTT_CF_PASSWORD) != 0);
-        assert(!mqtt_str_strcmp(&pkt.p.connect.will_topic, "hello"));
-        assert(!mqtt_str_strcmp(&pkt.p.connect.will_message, "world"));
-        assert(!mqtt_str_strcmp(&pkt.p.connect.client_id, "mqtt"));
-        assert(!mqtt_str_strcmp(&pkt.p.connect.username, "username"));
-        assert(!mqtt_str_strcmp(&pkt.p.connect.password, "password"));
+        CHECK(rc == 1);
+        CHECK(pkt.ver == MQTT_VERSION_3);
+        CHECK(MQTT_FH_TYPE(pkt.f.flags) == MQTT_CONNECT);
+        CHECK(pkt.v.connect.protocol_version == MQTT_VERSION_3);
+        CHECK(!mqtt_str_strcmp(&pkt.v.connect.protocol_name, mqtt_protocol_name(MQTT_VERSION_3)));
+        CHECK((pkt.v.connect.connect_flags & MQTT_CF_CLEAN_SESSION) != 0);
+        CHECK((pkt.v.connect.connect_flags & MQTT_CF_WILL_FLAG) != 0);
+        CHECK(MQTT_CF_WILL_QOS(pkt.v.connect.connect_flags) == MQTT_QOS_1);
+        CHECK((pkt.v.connect.connect_flags & MQTT_CF_WILL_RETAIN) != 0);
+        CHECK((pkt.v.connect.connect_flags & MQTT_CF_USERNAME) != 0);
+        CHECK((pkt.v.connect.connect_flags & MQTT_CF_PASSWORD) != 0);
+        CHECK(!mqtt_str_strcmp(&pkt.p.connect.will_topic, "hello"));
+        CHECK(!mqtt_str_strcmp(&pkt.p.connect.will_message, "world"));
+        CHECK(!mqtt_str_strcmp(&pkt.p.connect.client_id, "mqtt"));
+        CHECK(!mqtt_str_strcmp(&pkt.p.connect.username, "username"));
+        CHECK(!mqtt_str_strcmp(&pkt.p.connect.password, "password"));
 
         mqtt_packet_cleanup(&pkt);
         mqtt_parser_cleanup(&parser);
@@ -65,7 +72,7 @@ test_mqtt() {
         pkt.v.connack.v3.return_code = MQTT_CRC_ACCEPTED;
         rc = mqtt_serialize(&pkt, &bs);
         mqtt_packet_cleanup(&pkt);
-        assert(rc == 0);
+        CHECK(rc == 0);
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
@@ -75,10 +82,10 @@ test_mqtt() {
         mqtt_parser_version(&parser, MQTT_VERSION_3);
         rc = mqtt_parse(&parser, &bp, &pkt);
 
-        assert(rc == 1);
-        assert(pkt.ver == MQTT_VERSION_3);
-        assert(MQTT_FH_TYPE(pkt.f.flags) == MQTT_CONNACK);
-        assert(pkt.v.connack.v3.return_code == MQTT_CRC_ACCEPTED);
+        CHECK(rc == 1);
+        CHECK(pkt.ver == MQTT_VERSION_3);
+        CHECK(MQTT_FH_TYPE(pkt.f.flags) == MQTT_CONNACK);
+        CHECK(pkt.v.connack.v3.return_code == MQTT_CRC_ACCEPTED);
 
         mqtt_packet_cleanup(&pkt);
         mqtt_parser_cleanup(&parser);
@@ -95,7 +102,7 @@ test_mqtt() {
         mqtt_str_from(&pkt.p.subscribe.topic_filters[1], "topic_filter_2");
         rc = mqtt_serialize(&pkt, &bs);
         mqtt_packet_cleanup(&pkt);
-        assert(rc == 0);
+        CHECK(rc == 0);
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
@@ -105,15 +112,15 @@ test_mqtt() {
         mqtt_parser_version(&parser, MQTT_VERSION_3);
         rc = mqtt_parse(&parser, &bp, &pkt);
 
-        assert(rc == 1);
-        assert(pkt.ver == MQTT_VERSION_3);
-        assert(MQTT_FH_TYPE(pkt.f.flags) == MQTT_SUBSCRIBE);
-        assert(pkt.v.subscribe.packet_id == 0x03);
-        assert(pkt.p.subscribe.n == 2);
-        assert(!mqtt_str_strcmp(&pkt.p.subscribe.topic_filters[0], "topic_filter_1"));
-        assert((pkt.p.subscribe.options[0].flags& MQTT_SUBOPT_QOS_MASK) == MQTT_QOS_2);
-        assert(!mqtt_str_strcmp(&pkt.p.subscribe.topic_filters[1], "topic_filter_2"));
-        assert((pkt.p.subscribe.options[1].flags& MQTT_SUBOPT_QOS_MASK) == MQTT_QOS_1);
+        CHECK(rc == 1);
+        CHECK(pkt.ver == MQTT_VERSION_3);
+        CHECK(MQTT_FH_TYPE(pkt.f.flags) == MQTT_SUBSCRIBE);
+        CHECK(pkt.v.subscribe.packet_id == 0x03);
+        CHECK(pkt.p.subscribe.n == 2);
+        CHECK(!mqtt_str_strcmp(&pkt.p.subscribe.topic_filters[0], "topic_filter_1"));
+        CHECK((pkt.p.subscribe.options[0].flags& MQTT_SUBOPT_QOS_MASK) == MQTT_QOS_2);
+        CHECK(!mqtt_str_strcmp(&pkt.p.subscribe.topic_filters[1], "topic_filter_2"));
+        CHECK((pkt.p.subscribe.options[1].flags& MQTT_SUBOPT_QOS_MASK) == MQTT_QOS_1);
 
         mqtt_packet_cleanup(&pkt);
         mqtt_parser_cleanup(&parser);
@@ -128,7 +135,7 @@ test_mqtt() {
         pkt.p.suback.v3.granted[1].flags = (uint8_t)((pkt.p.suback.v3.granted[1].flags & ~MQTT_SUBOPT_QOS_MASK) | ((MQTT_QOS_2) & MQTT_SUBOPT_QOS_MASK));
         rc = mqtt_serialize(&pkt, &bs);
         mqtt_packet_cleanup(&pkt);
-        assert(rc == 0);
+        CHECK(rc == 0);
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
@@ -138,13 +145,13 @@ test_mqtt() {
         mqtt_parser_version(&parser, MQTT_VERSION_3);
         rc = mqtt_parse(&parser, &bp, &pkt);
 
-        assert(rc == 1);
-        assert(pkt.ver == MQTT_VERSION_3);
-        assert(MQTT_FH_TYPE(pkt.f.flags) == MQTT_SUBACK);
-        assert(pkt.v.suback.packet_id == 0x05);
-        assert(pkt.p.suback.n == 2);
-        assert((pkt.p.suback.v3.granted[0].flags& MQTT_SUBOPT_QOS_MASK) == MQTT_QOS_0);
-        assert((pkt.p.suback.v3.granted[1].flags& MQTT_SUBOPT_QOS_MASK) == MQTT_QOS_2);
+        CHECK(rc == 1);
+        CHECK(pkt.ver == MQTT_VERSION_3);
+        CHECK(MQTT_FH_TYPE(pkt.f.flags) == MQTT_SUBACK);
+        CHECK(pkt.v.suback.packet_id == 0x05);
+        CHECK(pkt.p.suback.n == 2);
+        CHECK((pkt.p.suback.v3.granted[0].flags& MQTT_SUBOPT_QOS_MASK) == MQTT_QOS_0);
+        CHECK((pkt.p.suback.v3.granted[1].flags& MQTT_SUBOPT_QOS_MASK) == MQTT_QOS_2);
 
         mqtt_packet_cleanup(&pkt);
         mqtt_parser_cleanup(&parser);
@@ -159,7 +166,7 @@ test_mqtt() {
         mqtt_str_from(&pkt.p.unsubscribe.topic_filters[1], "topic_filter_2");
         rc = mqtt_serialize(&pkt, &bs);
         mqtt_packet_cleanup(&pkt);
-        assert(rc == 0);
+        CHECK(rc == 0);
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
@@ -169,13 +176,13 @@ test_mqtt() {
         mqtt_parser_version(&parser, MQTT_VERSION_3);
         rc = mqtt_parse(&parser, &bp, &pkt);
 
-        assert(rc == 1);
-        assert(pkt.ver == MQTT_VERSION_3);
-        assert(MQTT_FH_TYPE(pkt.f.flags) == MQTT_UNSUBSCRIBE);
-        assert(pkt.v.unsubscribe.packet_id == 0x22);
-        assert(pkt.p.unsubscribe.n == 2);
-        assert(!mqtt_str_strcmp(&pkt.p.unsubscribe.topic_filters[0], "topic_filter_1"));
-        assert(!mqtt_str_strcmp(&pkt.p.unsubscribe.topic_filters[1], "topic_filter_2"));
+        CHECK(rc == 1);
+        CHECK(pkt.ver == MQTT_VERSION_3);
+        CHECK(MQTT_FH_TYPE(pkt.f.flags) == MQTT_UNSUBSCRIBE);
+        CHECK(pkt.v.unsubscribe.packet_id == 0x22);
+        CHECK(pkt.p.unsubscribe.n == 2);
+        CHECK(!mqtt_str_strcmp(&pkt.p.unsubscribe.topic_filters[0], "topic_filter_1"));
+        CHECK(!mqtt_str_strcmp(&pkt.p.unsubscribe.topic_filters[1], "topic_filter_2"));
 
         mqtt_packet_cleanup(&pkt);
         mqtt_parser_cleanup(&parser);
@@ -187,7 +194,7 @@ test_mqtt() {
         pkt.v.unsuback.packet_id = 0x05;
         rc = mqtt_serialize(&pkt, &bs);
         mqtt_packet_cleanup(&pkt);
-        assert(rc == 0);
+        CHECK(rc == 0);
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
@@ -197,10 +204,10 @@ test_mqtt() {
         mqtt_parser_version(&parser, MQTT_VERSION_3);
         rc = mqtt_parse(&parser, &bp, &pkt);
 
-        assert(rc == 1);
-        assert(pkt.ver == MQTT_VERSION_3);
-        assert(MQTT_FH_TYPE(pkt.f.flags) == MQTT_UNSUBACK);
-        assert(pkt.v.unsuback.packet_id == 0x05);
+        CHECK(rc == 1);
+        CHECK(pkt.ver == MQTT_VERSION_3);
+        CHECK(MQTT_FH_TYPE(pkt.f.flags) == MQTT_UNSUBACK);
+        CHECK(pkt.v.unsuback.packet_id == 0x05);
 
         mqtt_packet_cleanup(&pkt);
         mqtt_parser_cleanup(&parser);
@@ -215,7 +222,7 @@ test_mqtt() {
         mqtt_str_from(&pkt.p.publish.message, "publish_message");
         rc = mqtt_serialize(&pkt, &bs);
         mqtt_packet_cleanup(&pkt);
-        assert(rc == 0);
+        CHECK(rc == 0);
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
@@ -225,15 +232,15 @@ test_mqtt() {
         mqtt_parser_version(&parser, MQTT_VERSION_3);
         rc = mqtt_parse(&parser, &bp, &pkt);
 
-        assert(rc == 1);
-        assert(pkt.ver == MQTT_VERSION_3);
-        assert(MQTT_FH_TYPE(pkt.f.flags) == MQTT_PUBLISH);
-        assert(MQTT_FH_DUP(pkt.f.flags) == 1);
-        assert(MQTT_FH_QOS(pkt.f.flags) == MQTT_QOS_2);
-        assert(MQTT_FH_RETAIN(pkt.f.flags) == 1);
-        assert(pkt.v.publish.packet_id == 0x12);
-        assert(!mqtt_str_strcmp(&pkt.v.publish.topic_name, "publish_topic"));
-        assert(!mqtt_str_strcmp(&pkt.p.publish.message, "publish_message"));
+        CHECK(rc == 1);
+        CHECK(pkt.ver == MQTT_VERSION_3);
+        CHECK(MQTT_FH_TYPE(pkt.f.flags) == MQTT_PUBLISH);
+        CHECK(MQTT_FH_DUP(pkt.f.flags) == 1);
+        CHECK(MQTT_FH_QOS(pkt.f.flags) == MQTT_QOS_2);
+        CHECK(MQTT_FH_RETAIN(pkt.f.flags) == 1);
+        CHECK(pkt.v.publish.packet_id == 0x12);
+        CHECK(!mqtt_str_strcmp(&pkt.v.publish.topic_name, "publish_topic"));
+        CHECK(!mqtt_str_strcmp(&pkt.p.publish.message, "publish_message"));
 
         mqtt_packet_cleanup(&pkt);
         mqtt_parser_cleanup(&parser);
@@ -245,7 +252,7 @@ test_mqtt() {
         pkt.v.puback.packet_id = 0x22;
         rc = mqtt_serialize(&pkt, &bs);
         mqtt_packet_cleanup(&pkt);
-        assert(rc == 0);
+        CHECK(rc == 0);
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
@@ -255,10 +262,10 @@ test_mqtt() {
         mqtt_parser_version(&parser, MQTT_VERSION_3);
         rc = mqtt_parse(&parser, &bp, &pkt);
 
-        assert(rc == 1);
-        assert(pkt.ver == MQTT_VERSION_3);
-        assert(MQTT_FH_TYPE(pkt.f.flags) == MQTT_PUBACK);
-        assert(pkt.v.puback.packet_id == 0x22);
+        CHECK(rc == 1);
+        CHECK(pkt.ver == MQTT_VERSION_3);
+        CHECK(MQTT_FH_TYPE(pkt.f.flags) == MQTT_PUBACK);
+        CHECK(pkt.v.puback.packet_id == 0x22);
 
         mqtt_packet_cleanup(&pkt);
         mqtt_parser_cleanup(&parser);
@@ -270,7 +277,7 @@ test_mqtt() {
         pkt.v.puback.packet_id = 0x25;
         rc = mqtt_serialize(&pkt, &bs);
         mqtt_packet_cleanup(&pkt);
-        assert(rc == 0);
+        CHECK(rc == 0);
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
@@ -280,10 +287,10 @@ test_mqtt() {
         mqtt_parser_version(&parser, MQTT_VERSION_3);
         rc = mqtt_parse(&parser, &bp, &pkt);
 
-        assert(rc == 1);
-        assert(pkt.ver == MQTT_VERSION_3);
-        assert(MQTT_FH_TYPE(pkt.f.flags) == MQTT_PUBREC);
-        assert(pkt.v.puback.packet_id == 0x25);
+        CHECK(rc == 1);
+        CHECK(pkt.ver == MQTT_VERSION_3);
+        CHECK(MQTT_FH_TYPE(pkt.f.flags) == MQTT_PUBREC);
+        CHECK(pkt.v.puback.packet_id == 0x25);
 
         mqtt_packet_cleanup(&pkt);
         mqtt_parser_cleanup(&parser);
@@ -295,7 +302,7 @@ test_mqtt() {
         pkt.v.puback.packet_id = 0x23;
         rc = mqtt_serialize(&pkt, &bs);
         mqtt_packet_cleanup(&pkt);
-        assert(rc == 0);
+        CHECK(rc == 0);
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
@@ -305,10 +312,10 @@ test_mqtt() {
         mqtt_parser_version(&parser, MQTT_VERSION_3);
         rc = mqtt_parse(&parser, &bp, &pkt);
 
-        assert(rc == 1);
-        assert(pkt.ver == MQTT_VERSION_3);
-        assert(MQTT_FH_TYPE(pkt.f.flags) == MQTT_PUBREL);
-        assert(pkt.v.puback.packet_id == 0x23);
+        CHECK(rc == 1);
+        CHECK(pkt.ver == MQTT_VERSION_3);
+        CHECK(MQTT_FH_TYPE(pkt.f.flags) == MQTT_PUBREL);
+        CHECK(pkt.v.puback.packet_id == 0x23);
 
         mqtt_packet_cleanup(&pkt);
         mqtt_parser_cleanup(&parser);
@@ -320,7 +327,7 @@ test_mqtt() {
         pkt.v.puback.packet_id = 0x30;
         rc = mqtt_serialize(&pkt, &bs);
         mqtt_packet_cleanup(&pkt);
-        assert(rc == 0);
+        CHECK(rc == 0);
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
@@ -330,10 +337,10 @@ test_mqtt() {
         mqtt_parser_version(&parser, MQTT_VERSION_3);
         rc = mqtt_parse(&parser, &bp, &pkt);
 
-        assert(rc == 1);
-        assert(pkt.ver == MQTT_VERSION_3);
-        assert(MQTT_FH_TYPE(pkt.f.flags) == MQTT_PUBCOMP);
-        assert(pkt.v.puback.packet_id == 0x30);
+        CHECK(rc == 1);
+        CHECK(pkt.ver == MQTT_VERSION_3);
+        CHECK(MQTT_FH_TYPE(pkt.f.flags) == MQTT_PUBCOMP);
+        CHECK(pkt.v.puback.packet_id == 0x30);
 
         mqtt_packet_cleanup(&pkt);
         mqtt_parser_cleanup(&parser);
@@ -344,7 +351,7 @@ test_mqtt() {
         mqtt_packet_init(&pkt, MQTT_VERSION_3, MQTT_PINGREQ);
         rc = mqtt_serialize(&pkt, &bs);
         mqtt_packet_cleanup(&pkt);
-        assert(rc == 0);
+        CHECK(rc == 0);
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
@@ -354,9 +361,9 @@ test_mqtt() {
         mqtt_parser_version(&parser, MQTT_VERSION_3);
         rc = mqtt_parse(&parser, &bp, &pkt);
 
-        assert(rc == 1);
-        assert(pkt.ver == MQTT_VERSION_3);
-        assert(MQTT_FH_TYPE(pkt.f.flags) == MQTT_PINGREQ);
+        CHECK(rc == 1);
+        CHECK(pkt.ver == MQTT_VERSION_3);
+        CHECK(MQTT_FH_TYPE(pkt.f.flags) == MQTT_PINGREQ);
 
         mqtt_packet_cleanup(&pkt);
         mqtt_parser_cleanup(&parser);
@@ -367,7 +374,7 @@ test_mqtt() {
         mqtt_packet_init(&pkt, MQTT_VERSION_3, MQTT_PINGRESP);
         rc = mqtt_serialize(&pkt, &bs);
         mqtt_packet_cleanup(&pkt);
-        assert(rc == 0);
+        CHECK(rc == 0);
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
@@ -377,9 +384,9 @@ test_mqtt() {
         mqtt_parser_version(&parser, MQTT_VERSION_3);
         rc = mqtt_parse(&parser, &bp, &pkt);
 
-        assert(rc == 1);
-        assert(pkt.ver == MQTT_VERSION_3);
-        assert(MQTT_FH_TYPE(pkt.f.flags) == MQTT_PINGRESP);
+        CHECK(rc == 1);
+        CHECK(pkt.ver == MQTT_VERSION_3);
+        CHECK(MQTT_FH_TYPE(pkt.f.flags) == MQTT_PINGRESP);
 
         mqtt_packet_cleanup(&pkt);
         mqtt_parser_cleanup(&parser);
@@ -390,7 +397,7 @@ test_mqtt() {
         mqtt_packet_init(&pkt, MQTT_VERSION_3, MQTT_DISCONNECT);
         rc = mqtt_serialize(&pkt, &bs);
         mqtt_packet_cleanup(&pkt);
-        assert(rc == 0);
+        CHECK(rc == 0);
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
@@ -400,9 +407,9 @@ test_mqtt() {
         mqtt_parser_version(&parser, MQTT_VERSION_3);
         rc = mqtt_parse(&parser, &bp, &pkt);
 
-        assert(rc == 1);
-        assert(pkt.ver == MQTT_VERSION_3);
-        assert(MQTT_FH_TYPE(pkt.f.flags) == MQTT_DISCONNECT);
+        CHECK(rc == 1);
+        CHECK(pkt.ver == MQTT_VERSION_3);
+        CHECK(MQTT_FH_TYPE(pkt.f.flags) == MQTT_DISCONNECT);
 
         mqtt_packet_cleanup(&pkt);
         mqtt_parser_cleanup(&parser);
@@ -433,7 +440,7 @@ test_mqtt() {
         mqtt_str_from(&pkt.p.connect.password, "password");
         rc = mqtt_serialize(&pkt, &bs);
         mqtt_packet_cleanup(&pkt);
-        assert(rc == 0);
+        CHECK(rc == 0);
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
@@ -442,21 +449,21 @@ test_mqtt() {
         mqtt_parser_init(&parser);
         rc = mqtt_parse(&parser, &bp, &pkt);
 
-        assert(rc == 1);
-        assert(MQTT_FH_TYPE(pkt.f.flags) == MQTT_CONNECT);
-        assert(pkt.v.connect.protocol_version == MQTT_VERSION_4);
-        assert(!mqtt_str_strcmp(&pkt.v.connect.protocol_name, mqtt_protocol_name(MQTT_VERSION_4)));
-        assert((pkt.v.connect.connect_flags & MQTT_CF_CLEAN_SESSION) != 0);
-        assert((pkt.v.connect.connect_flags & MQTT_CF_WILL_FLAG) != 0);
-        assert(MQTT_CF_WILL_QOS(pkt.v.connect.connect_flags) == MQTT_QOS_1);
-        assert((pkt.v.connect.connect_flags & MQTT_CF_WILL_RETAIN) != 0);
-        assert((pkt.v.connect.connect_flags & MQTT_CF_USERNAME) != 0);
-        assert((pkt.v.connect.connect_flags & MQTT_CF_PASSWORD) != 0);
-        assert(!mqtt_str_strcmp(&pkt.p.connect.will_topic, "hello"));
-        assert(!mqtt_str_strcmp(&pkt.p.connect.will_message, "world"));
-        assert(!mqtt_str_strcmp(&pkt.p.connect.client_id, "mqtt"));
-        assert(!mqtt_str_strcmp(&pkt.p.connect.username, "username"));
-        assert(!mqtt_str_strcmp(&pkt.p.connect.password, "password"));
+        CHECK(rc == 1);
+        CHECK(MQTT_FH_TYPE(pkt.f.flags) == MQTT_CONNECT);
+        CHECK(pkt.v.connect.protocol_version == MQTT_VERSION_4);
+        CHECK(!mqtt_str_strcmp(&pkt.v.connect.protocol_name, mqtt_protocol_name(MQTT_VERSION_4)));
+        CHECK((pkt.v.connect.connect_flags & MQTT_CF_CLEAN_SESSION) != 0);
+        CHECK((pkt.v.connect.connect_flags & MQTT_CF_WILL_FLAG) != 0);
+        CHECK(MQTT_CF_WILL_QOS(pkt.v.connect.connect_flags) == MQTT_QOS_1);
+        CHECK((pkt.v.connect.connect_flags & MQTT_CF_WILL_RETAIN) != 0);
+        CHECK((pkt.v.connect.connect_flags & MQTT_CF_USERNAME) != 0);
+        CHECK((pkt.v.connect.connect_flags & MQTT_CF_PASSWORD) != 0);
+        CHECK(!mqtt_str_strcmp(&pkt.p.connect.will_topic, "hello"));
+        CHECK(!mqtt_str_strcmp(&pkt.p.connect.will_message, "world"));
+        CHECK(!mqtt_str_strcmp(&pkt.p.connect.client_id, "mqtt"));
+        CHECK(!mqtt_str_strcmp(&pkt.p.connect.username, "username"));
+        CHECK(!mqtt_str_strcmp(&pkt.p.connect.password, "password"));
 
         mqtt_packet_cleanup(&pkt);
         mqtt_parser_cleanup(&parser);
@@ -469,7 +476,7 @@ test_mqtt() {
         pkt.v.connack.v4.return_code = MQTT_CRC_ACCEPTED;
         rc = mqtt_serialize(&pkt, &bs);
         mqtt_packet_cleanup(&pkt);
-        assert(rc == 0);
+        CHECK(rc == 0);
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
@@ -479,11 +486,11 @@ test_mqtt() {
         mqtt_parser_version(&parser, MQTT_VERSION_4);
         rc = mqtt_parse(&parser, &bp, &pkt);
 
-        assert(rc == 1);
-        assert(pkt.ver == MQTT_VERSION_4);
-        assert(MQTT_FH_TYPE(pkt.f.flags) == MQTT_CONNACK);
-        assert((pkt.v.connack.v4.acknowledge_flags.flags & MQTT_ACK_SESSION_PRESENT) != 0);
-        assert(pkt.v.connack.v4.return_code == MQTT_CRC_ACCEPTED);
+        CHECK(rc == 1);
+        CHECK(pkt.ver == MQTT_VERSION_4);
+        CHECK(MQTT_FH_TYPE(pkt.f.flags) == MQTT_CONNACK);
+        CHECK((pkt.v.connack.v4.acknowledge_flags.flags & MQTT_ACK_SESSION_PRESENT) != 0);
+        CHECK(pkt.v.connack.v4.return_code == MQTT_CRC_ACCEPTED);
 
         mqtt_packet_cleanup(&pkt);
         mqtt_parser_cleanup(&parser);
@@ -500,7 +507,7 @@ test_mqtt() {
         mqtt_str_from(&pkt.p.subscribe.topic_filters[1], "topic_filter_2");
         rc = mqtt_serialize(&pkt, &bs);
         mqtt_packet_cleanup(&pkt);
-        assert(rc == 0);
+        CHECK(rc == 0);
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
@@ -510,15 +517,15 @@ test_mqtt() {
         mqtt_parser_version(&parser, MQTT_VERSION_4);
         rc = mqtt_parse(&parser, &bp, &pkt);
 
-        assert(rc == 1);
-        assert(pkt.ver == MQTT_VERSION_4);
-        assert(MQTT_FH_TYPE(pkt.f.flags) == MQTT_SUBSCRIBE);
-        assert(pkt.v.subscribe.packet_id == 0x03);
-        assert(pkt.p.subscribe.n == 2);
-        assert(!mqtt_str_strcmp(&pkt.p.subscribe.topic_filters[0], "topic_filter_1"));
-        assert((pkt.p.subscribe.options[0].flags& MQTT_SUBOPT_QOS_MASK) == MQTT_QOS_2);
-        assert(!mqtt_str_strcmp(&pkt.p.subscribe.topic_filters[1], "topic_filter_2"));
-        assert((pkt.p.subscribe.options[1].flags& MQTT_SUBOPT_QOS_MASK) == MQTT_QOS_1);
+        CHECK(rc == 1);
+        CHECK(pkt.ver == MQTT_VERSION_4);
+        CHECK(MQTT_FH_TYPE(pkt.f.flags) == MQTT_SUBSCRIBE);
+        CHECK(pkt.v.subscribe.packet_id == 0x03);
+        CHECK(pkt.p.subscribe.n == 2);
+        CHECK(!mqtt_str_strcmp(&pkt.p.subscribe.topic_filters[0], "topic_filter_1"));
+        CHECK((pkt.p.subscribe.options[0].flags& MQTT_SUBOPT_QOS_MASK) == MQTT_QOS_2);
+        CHECK(!mqtt_str_strcmp(&pkt.p.subscribe.topic_filters[1], "topic_filter_2"));
+        CHECK((pkt.p.subscribe.options[1].flags& MQTT_SUBOPT_QOS_MASK) == MQTT_QOS_1);
 
         mqtt_packet_cleanup(&pkt);
         mqtt_parser_cleanup(&parser);
@@ -533,7 +540,7 @@ test_mqtt() {
         pkt.p.suback.v4.return_codes[1] = MQTT_SRC_QOS_F;
         rc = mqtt_serialize(&pkt, &bs);
         mqtt_packet_cleanup(&pkt);
-        assert(rc == 0);
+        CHECK(rc == 0);
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
@@ -543,13 +550,13 @@ test_mqtt() {
         mqtt_parser_version(&parser, MQTT_VERSION_4);
         rc = mqtt_parse(&parser, &bp, &pkt);
 
-        assert(rc == 1);
-        assert(pkt.ver == MQTT_VERSION_4);
-        assert(MQTT_FH_TYPE(pkt.f.flags) == MQTT_SUBACK);
-        assert(pkt.v.suback.packet_id == 0x05);
-        assert(pkt.p.suback.n == 2);
-        assert(pkt.p.suback.v4.return_codes[0] == MQTT_SRC_QOS_1);
-        assert(pkt.p.suback.v4.return_codes[1] == MQTT_SRC_QOS_F);
+        CHECK(rc == 1);
+        CHECK(pkt.ver == MQTT_VERSION_4);
+        CHECK(MQTT_FH_TYPE(pkt.f.flags) == MQTT_SUBACK);
+        CHECK(pkt.v.suback.packet_id == 0x05);
+        CHECK(pkt.p.suback.n == 2);
+        CHECK(pkt.p.suback.v4.return_codes[0] == MQTT_SRC_QOS_1);
+        CHECK(pkt.p.suback.v4.return_codes[1] == MQTT_SRC_QOS_F);
 
         mqtt_packet_cleanup(&pkt);
         mqtt_parser_cleanup(&parser);
@@ -564,7 +571,7 @@ test_mqtt() {
         mqtt_str_from(&pkt.p.unsubscribe.topic_filters[1], "topic_filter_2");
         rc = mqtt_serialize(&pkt, &bs);
         mqtt_packet_cleanup(&pkt);
-        assert(rc == 0);
+        CHECK(rc == 0);
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
@@ -574,13 +581,13 @@ test_mqtt() {
         mqtt_parser_version(&parser, MQTT_VERSION_4);
         rc = mqtt_parse(&parser, &bp, &pkt);
 
-        assert(rc == 1);
-        assert(pkt.ver == MQTT_VERSION_4);
-        assert(MQTT_FH_TYPE(pkt.f.flags) == MQTT_UNSUBSCRIBE);
-        assert(pkt.v.unsubscribe.packet_id == 0x22);
-        assert(pkt.p.unsubscribe.n == 2);
-        assert(!mqtt_str_strcmp(&pkt.p.unsubscribe.topic_filters[0], "topic_filter_1"));
-        assert(!mqtt_str_strcmp(&pkt.p.unsubscribe.topic_filters[1], "topic_filter_2"));
+        CHECK(rc == 1);
+        CHECK(pkt.ver == MQTT_VERSION_4);
+        CHECK(MQTT_FH_TYPE(pkt.f.flags) == MQTT_UNSUBSCRIBE);
+        CHECK(pkt.v.unsubscribe.packet_id == 0x22);
+        CHECK(pkt.p.unsubscribe.n == 2);
+        CHECK(!mqtt_str_strcmp(&pkt.p.unsubscribe.topic_filters[0], "topic_filter_1"));
+        CHECK(!mqtt_str_strcmp(&pkt.p.unsubscribe.topic_filters[1], "topic_filter_2"));
 
         mqtt_packet_cleanup(&pkt);
         mqtt_parser_cleanup(&parser);
@@ -592,7 +599,7 @@ test_mqtt() {
         pkt.v.unsuback.packet_id = 0x05;
         rc = mqtt_serialize(&pkt, &bs);
         mqtt_packet_cleanup(&pkt);
-        assert(rc == 0);
+        CHECK(rc == 0);
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
@@ -602,10 +609,10 @@ test_mqtt() {
         mqtt_parser_version(&parser, MQTT_VERSION_4);
         rc = mqtt_parse(&parser, &bp, &pkt);
 
-        assert(rc == 1);
-        assert(pkt.ver == MQTT_VERSION_4);
-        assert(MQTT_FH_TYPE(pkt.f.flags) == MQTT_UNSUBACK);
-        assert(pkt.v.unsuback.packet_id == 0x05);
+        CHECK(rc == 1);
+        CHECK(pkt.ver == MQTT_VERSION_4);
+        CHECK(MQTT_FH_TYPE(pkt.f.flags) == MQTT_UNSUBACK);
+        CHECK(pkt.v.unsuback.packet_id == 0x05);
 
         mqtt_packet_cleanup(&pkt);
         mqtt_parser_cleanup(&parser);
@@ -620,7 +627,7 @@ test_mqtt() {
         mqtt_str_from(&pkt.p.publish.message, "publish_message");
         rc = mqtt_serialize(&pkt, &bs);
         mqtt_packet_cleanup(&pkt);
-        assert(rc == 0);
+        CHECK(rc == 0);
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
@@ -630,15 +637,15 @@ test_mqtt() {
         mqtt_parser_version(&parser, MQTT_VERSION_4);
         rc = mqtt_parse(&parser, &bp, &pkt);
 
-        assert(rc == 1);
-        assert(pkt.ver == MQTT_VERSION_4);
-        assert(MQTT_FH_TYPE(pkt.f.flags) == MQTT_PUBLISH);
-        assert(MQTT_FH_DUP(pkt.f.flags) == 1);
-        assert(MQTT_FH_QOS(pkt.f.flags) == MQTT_QOS_2);
-        assert(MQTT_FH_RETAIN(pkt.f.flags) == 1);
-        assert(pkt.v.publish.packet_id == 0x12);
-        assert(!mqtt_str_strcmp(&pkt.v.publish.topic_name, "publish_topic"));
-        assert(!mqtt_str_strcmp(&pkt.p.publish.message, "publish_message"));
+        CHECK(rc == 1);
+        CHECK(pkt.ver == MQTT_VERSION_4);
+        CHECK(MQTT_FH_TYPE(pkt.f.flags) == MQTT_PUBLISH);
+        CHECK(MQTT_FH_DUP(pkt.f.flags) == 1);
+        CHECK(MQTT_FH_QOS(pkt.f.flags) == MQTT_QOS_2);
+        CHECK(MQTT_FH_RETAIN(pkt.f.flags) == 1);
+        CHECK(pkt.v.publish.packet_id == 0x12);
+        CHECK(!mqtt_str_strcmp(&pkt.v.publish.topic_name, "publish_topic"));
+        CHECK(!mqtt_str_strcmp(&pkt.p.publish.message, "publish_message"));
 
         mqtt_packet_cleanup(&pkt);
         mqtt_parser_cleanup(&parser);
@@ -650,7 +657,7 @@ test_mqtt() {
         pkt.v.puback.packet_id = 0x22;
         rc = mqtt_serialize(&pkt, &bs);
         mqtt_packet_cleanup(&pkt);
-        assert(rc == 0);
+        CHECK(rc == 0);
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
@@ -660,10 +667,10 @@ test_mqtt() {
         mqtt_parser_version(&parser, MQTT_VERSION_4);
         rc = mqtt_parse(&parser, &bp, &pkt);
 
-        assert(rc == 1);
-        assert(pkt.ver == MQTT_VERSION_4);
-        assert(MQTT_FH_TYPE(pkt.f.flags) == MQTT_PUBACK);
-        assert(pkt.v.puback.packet_id == 0x22);
+        CHECK(rc == 1);
+        CHECK(pkt.ver == MQTT_VERSION_4);
+        CHECK(MQTT_FH_TYPE(pkt.f.flags) == MQTT_PUBACK);
+        CHECK(pkt.v.puback.packet_id == 0x22);
 
         mqtt_packet_cleanup(&pkt);
         mqtt_parser_cleanup(&parser);
@@ -675,7 +682,7 @@ test_mqtt() {
         pkt.v.puback.packet_id = 0x25;
         rc = mqtt_serialize(&pkt, &bs);
         mqtt_packet_cleanup(&pkt);
-        assert(rc == 0);
+        CHECK(rc == 0);
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
@@ -685,10 +692,10 @@ test_mqtt() {
         mqtt_parser_version(&parser, MQTT_VERSION_4);
         rc = mqtt_parse(&parser, &bp, &pkt);
 
-        assert(rc == 1);
-        assert(pkt.ver == MQTT_VERSION_4);
-        assert(MQTT_FH_TYPE(pkt.f.flags) == MQTT_PUBREC);
-        assert(pkt.v.puback.packet_id == 0x25);
+        CHECK(rc == 1);
+        CHECK(pkt.ver == MQTT_VERSION_4);
+        CHECK(MQTT_FH_TYPE(pkt.f.flags) == MQTT_PUBREC);
+        CHECK(pkt.v.puback.packet_id == 0x25);
 
         mqtt_packet_cleanup(&pkt);
         mqtt_parser_cleanup(&parser);
@@ -700,7 +707,7 @@ test_mqtt() {
         pkt.v.puback.packet_id = 0x23;
         rc = mqtt_serialize(&pkt, &bs);
         mqtt_packet_cleanup(&pkt);
-        assert(rc == 0);
+        CHECK(rc == 0);
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
@@ -710,10 +717,10 @@ test_mqtt() {
         mqtt_parser_version(&parser, MQTT_VERSION_4);
         rc = mqtt_parse(&parser, &bp, &pkt);
 
-        assert(rc == 1);
-        assert(pkt.ver == MQTT_VERSION_4);
-        assert(MQTT_FH_TYPE(pkt.f.flags) == MQTT_PUBREL);
-        assert(pkt.v.puback.packet_id == 0x23);
+        CHECK(rc == 1);
+        CHECK(pkt.ver == MQTT_VERSION_4);
+        CHECK(MQTT_FH_TYPE(pkt.f.flags) == MQTT_PUBREL);
+        CHECK(pkt.v.puback.packet_id == 0x23);
 
         mqtt_packet_cleanup(&pkt);
         mqtt_parser_cleanup(&parser);
@@ -725,7 +732,7 @@ test_mqtt() {
         pkt.v.puback.packet_id = 0x30;
         rc = mqtt_serialize(&pkt, &bs);
         mqtt_packet_cleanup(&pkt);
-        assert(rc == 0);
+        CHECK(rc == 0);
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
@@ -735,10 +742,10 @@ test_mqtt() {
         mqtt_parser_version(&parser, MQTT_VERSION_4);
         rc = mqtt_parse(&parser, &bp, &pkt);
 
-        assert(rc == 1);
-        assert(pkt.ver == MQTT_VERSION_4);
-        assert(MQTT_FH_TYPE(pkt.f.flags) == MQTT_PUBCOMP);
-        assert(pkt.v.puback.packet_id == 0x30);
+        CHECK(rc == 1);
+        CHECK(pkt.ver == MQTT_VERSION_4);
+        CHECK(MQTT_FH_TYPE(pkt.f.flags) == MQTT_PUBCOMP);
+        CHECK(pkt.v.puback.packet_id == 0x30);
 
         mqtt_packet_cleanup(&pkt);
         mqtt_parser_cleanup(&parser);
@@ -749,7 +756,7 @@ test_mqtt() {
         mqtt_packet_init(&pkt, MQTT_VERSION_4, MQTT_PINGREQ);
         rc = mqtt_serialize(&pkt, &bs);
         mqtt_packet_cleanup(&pkt);
-        assert(rc == 0);
+        CHECK(rc == 0);
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
@@ -759,9 +766,9 @@ test_mqtt() {
         mqtt_parser_version(&parser, MQTT_VERSION_4);
         rc = mqtt_parse(&parser, &bp, &pkt);
 
-        assert(rc == 1);
-        assert(pkt.ver == MQTT_VERSION_4);
-        assert(MQTT_FH_TYPE(pkt.f.flags) == MQTT_PINGREQ);
+        CHECK(rc == 1);
+        CHECK(pkt.ver == MQTT_VERSION_4);
+        CHECK(MQTT_FH_TYPE(pkt.f.flags) == MQTT_PINGREQ);
 
         mqtt_packet_cleanup(&pkt);
         mqtt_parser_cleanup(&parser);
@@ -772,7 +779,7 @@ test_mqtt() {
         mqtt_packet_init(&pkt, MQTT_VERSION_4, MQTT_PINGRESP);
         rc = mqtt_serialize(&pkt, &bs);
         mqtt_packet_cleanup(&pkt);
-        assert(rc == 0);
+        CHECK(rc == 0);
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
@@ -782,9 +789,9 @@ test_mqtt() {
         mqtt_parser_version(&parser, MQTT_VERSION_4);
         rc = mqtt_parse(&parser, &bp, &pkt);
 
-        assert(rc == 1);
-        assert(pkt.ver == MQTT_VERSION_4);
-        assert(MQTT_FH_TYPE(pkt.f.flags) == MQTT_PINGRESP);
+        CHECK(rc == 1);
+        CHECK(pkt.ver == MQTT_VERSION_4);
+        CHECK(MQTT_FH_TYPE(pkt.f.flags) == MQTT_PINGRESP);
 
         mqtt_packet_cleanup(&pkt);
         mqtt_parser_cleanup(&parser);
@@ -795,7 +802,7 @@ test_mqtt() {
         mqtt_packet_init(&pkt, MQTT_VERSION_4, MQTT_DISCONNECT);
         rc = mqtt_serialize(&pkt, &bs);
         mqtt_packet_cleanup(&pkt);
-        assert(rc == 0);
+        CHECK(rc == 0);
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
@@ -805,9 +812,9 @@ test_mqtt() {
         mqtt_parser_version(&parser, MQTT_VERSION_4);
         rc = mqtt_parse(&parser, &bp, &pkt);
 
-        assert(rc == 1);
-        assert(pkt.ver == MQTT_VERSION_4);
-        assert(MQTT_FH_TYPE(pkt.f.flags) == MQTT_DISCONNECT);
+        CHECK(rc == 1);
+        CHECK(pkt.ver == MQTT_VERSION_4);
+        CHECK(MQTT_FH_TYPE(pkt.f.flags) == MQTT_DISCONNECT);
 
         mqtt_packet_cleanup(&pkt);
         mqtt_parser_cleanup(&parser);
@@ -845,7 +852,7 @@ test_mqtt() {
                             (void *)&authentication_data, 0);
         rc = mqtt_serialize(&pkt, &bs);
         mqtt_packet_cleanup(&pkt);
-        assert(rc == 0);
+        CHECK(rc == 0);
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
@@ -854,29 +861,29 @@ test_mqtt() {
         mqtt_parser_init(&parser);
         rc = mqtt_parse(&parser, &bp, &pkt);
 
-        assert(rc == 1);
-        assert(MQTT_FH_TYPE(pkt.f.flags) == MQTT_CONNECT);
-        assert(pkt.v.connect.protocol_version == MQTT_VERSION_5);
-        assert(!mqtt_str_strcmp(&pkt.v.connect.protocol_name, mqtt_protocol_name(MQTT_VERSION_5)));
-        assert((pkt.v.connect.connect_flags & MQTT_CF_CLEAN_SESSION) != 0);
-        assert((pkt.v.connect.connect_flags & MQTT_CF_WILL_FLAG) != 0);
-        assert(MQTT_CF_WILL_QOS(pkt.v.connect.connect_flags) == MQTT_QOS_2);
-        assert((pkt.v.connect.connect_flags & MQTT_CF_WILL_RETAIN) != 0);
-        assert((pkt.v.connect.connect_flags & MQTT_CF_USERNAME) != 0);
-        assert((pkt.v.connect.connect_flags & MQTT_CF_PASSWORD) != 0);
-        assert(!mqtt_str_strcmp(&pkt.p.connect.will_topic, "hello"));
-        assert(!mqtt_str_strcmp(&pkt.p.connect.will_message, "world"));
-        assert(!mqtt_str_strcmp(&pkt.p.connect.client_id, "mqtt"));
-        assert(!mqtt_str_strcmp(&pkt.p.connect.username, "username"));
-        assert(!mqtt_str_strcmp(&pkt.p.connect.password, "password"));
+        CHECK(rc == 1);
+        CHECK(MQTT_FH_TYPE(pkt.f.flags) == MQTT_CONNECT);
+        CHECK(pkt.v.connect.protocol_version == MQTT_VERSION_5);
+        CHECK(!mqtt_str_strcmp(&pkt.v.connect.protocol_name, mqtt_protocol_name(MQTT_VERSION_5)));
+        CHECK((pkt.v.connect.connect_flags & MQTT_CF_CLEAN_SESSION) != 0);
+        CHECK((pkt.v.connect.connect_flags & MQTT_CF_WILL_FLAG) != 0);
+        CHECK(MQTT_CF_WILL_QOS(pkt.v.connect.connect_flags) == MQTT_QOS_2);
+        CHECK((pkt.v.connect.connect_flags & MQTT_CF_WILL_RETAIN) != 0);
+        CHECK((pkt.v.connect.connect_flags & MQTT_CF_USERNAME) != 0);
+        CHECK((pkt.v.connect.connect_flags & MQTT_CF_PASSWORD) != 0);
+        CHECK(!mqtt_str_strcmp(&pkt.p.connect.will_topic, "hello"));
+        CHECK(!mqtt_str_strcmp(&pkt.p.connect.will_message, "world"));
+        CHECK(!mqtt_str_strcmp(&pkt.p.connect.client_id, "mqtt"));
+        CHECK(!mqtt_str_strcmp(&pkt.p.connect.username, "username"));
+        CHECK(!mqtt_str_strcmp(&pkt.p.connect.password, "password"));
 
         prop = mqtt_properties_find(&pkt.v.connect.v5.properties, MQTT_PROPERTY_AUTHENTICATION_METHOD);
-        assert(prop);
-        assert(!mqtt_str_strcmp(&prop->str, "oauth2"));
+        CHECK(prop);
+        CHECK(!mqtt_str_strcmp(&prop->str, "oauth2"));
 
         prop = mqtt_properties_find(&pkt.v.connect.v5.properties, MQTT_PROPERTY_AUTHENTICATION_DATA);
-        assert(prop);
-        assert(!mqtt_str_strcmp(&prop->data, "password@libmqtt"));
+        CHECK(prop);
+        CHECK(!mqtt_str_strcmp(&prop->data, "password@libmqtt"));
 
         mqtt_packet_cleanup(&pkt);
         mqtt_parser_cleanup(&parser);
@@ -889,7 +896,7 @@ test_mqtt() {
         pkt.v.connack.v5.reason_code = MQTT_RC_BAD_AUTHENTICATION_METHOD;
         rc = mqtt_serialize(&pkt, &bs);
         mqtt_packet_cleanup(&pkt);
-        assert(rc == 0);
+        CHECK(rc == 0);
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
@@ -899,11 +906,11 @@ test_mqtt() {
         mqtt_parser_version(&parser, MQTT_VERSION_5);
         rc = mqtt_parse(&parser, &bp, &pkt);
 
-        assert(rc == 1);
-        assert(pkt.ver == MQTT_VERSION_5);
-        assert(MQTT_FH_TYPE(pkt.f.flags) == MQTT_CONNACK);
-        assert((pkt.v.connack.v5.acknowledge_flags.flags & MQTT_ACK_SESSION_PRESENT) != 0);
-        assert(pkt.v.connack.v5.reason_code == MQTT_RC_BAD_AUTHENTICATION_METHOD);
+        CHECK(rc == 1);
+        CHECK(pkt.ver == MQTT_VERSION_5);
+        CHECK(MQTT_FH_TYPE(pkt.f.flags) == MQTT_CONNACK);
+        CHECK((pkt.v.connack.v5.acknowledge_flags.flags & MQTT_ACK_SESSION_PRESENT) != 0);
+        CHECK(pkt.v.connack.v5.reason_code == MQTT_RC_BAD_AUTHENTICATION_METHOD);
 
         mqtt_packet_cleanup(&pkt);
         mqtt_parser_cleanup(&parser);
@@ -926,7 +933,7 @@ test_mqtt() {
         mqtt_str_from(&pkt.p.subscribe.topic_filters[1], "topic_filter_2");
         rc = mqtt_serialize(&pkt, &bs);
         mqtt_packet_cleanup(&pkt);
-        assert(rc == 0);
+        CHECK(rc == 0);
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
@@ -936,21 +943,21 @@ test_mqtt() {
         mqtt_parser_version(&parser, MQTT_VERSION_5);
         rc = mqtt_parse(&parser, &bp, &pkt);
 
-        assert(rc == 1);
-        assert(pkt.ver == MQTT_VERSION_5);
-        assert(MQTT_FH_TYPE(pkt.f.flags) == MQTT_SUBSCRIBE);
-        assert(pkt.v.subscribe.packet_id == 0x03);
-        assert(pkt.p.subscribe.n == 2);
-        assert(!mqtt_str_strcmp(&pkt.p.subscribe.topic_filters[0], "topic_filter_1"));
-        assert((pkt.p.subscribe.options[0].flags& MQTT_SUBOPT_QOS_MASK) == MQTT_QOS_2);
-        assert((pkt.p.subscribe.options[0].flags & MQTT_SUBOPT_NL) != 0);
-        assert((pkt.p.subscribe.options[0].flags& MQTT_SUBOPT_RAP) == 0);
-        assert(MQTT_SUBOPT_RH(pkt.p.subscribe.options[0].flags) == 1);
-        assert(!mqtt_str_strcmp(&pkt.p.subscribe.topic_filters[1], "topic_filter_2"));
-        assert((pkt.p.subscribe.options[1].flags& MQTT_SUBOPT_QOS_MASK) == MQTT_QOS_1);
-        assert((pkt.p.subscribe.options[1].flags& MQTT_SUBOPT_NL) == 0);
-        assert((pkt.p.subscribe.options[1].flags & MQTT_SUBOPT_RAP) != 0);
-        assert(MQTT_SUBOPT_RH(pkt.p.subscribe.options[1].flags) == 0);
+        CHECK(rc == 1);
+        CHECK(pkt.ver == MQTT_VERSION_5);
+        CHECK(MQTT_FH_TYPE(pkt.f.flags) == MQTT_SUBSCRIBE);
+        CHECK(pkt.v.subscribe.packet_id == 0x03);
+        CHECK(pkt.p.subscribe.n == 2);
+        CHECK(!mqtt_str_strcmp(&pkt.p.subscribe.topic_filters[0], "topic_filter_1"));
+        CHECK((pkt.p.subscribe.options[0].flags& MQTT_SUBOPT_QOS_MASK) == MQTT_QOS_2);
+        CHECK((pkt.p.subscribe.options[0].flags & MQTT_SUBOPT_NL) != 0);
+        CHECK((pkt.p.subscribe.options[0].flags& MQTT_SUBOPT_RAP) == 0);
+        CHECK(MQTT_SUBOPT_RH(pkt.p.subscribe.options[0].flags) == 1);
+        CHECK(!mqtt_str_strcmp(&pkt.p.subscribe.topic_filters[1], "topic_filter_2"));
+        CHECK((pkt.p.subscribe.options[1].flags& MQTT_SUBOPT_QOS_MASK) == MQTT_QOS_1);
+        CHECK((pkt.p.subscribe.options[1].flags& MQTT_SUBOPT_NL) == 0);
+        CHECK((pkt.p.subscribe.options[1].flags & MQTT_SUBOPT_RAP) != 0);
+        CHECK(MQTT_SUBOPT_RH(pkt.p.subscribe.options[1].flags) == 0);
 
         mqtt_packet_cleanup(&pkt);
         mqtt_parser_cleanup(&parser);
@@ -965,7 +972,7 @@ test_mqtt() {
         pkt.p.suback.v5.reason_codes[1] = MQTT_RC_GRANTED_QOS_1;
         rc = mqtt_serialize(&pkt, &bs);
         mqtt_packet_cleanup(&pkt);
-        assert(rc == 0);
+        CHECK(rc == 0);
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
@@ -975,13 +982,13 @@ test_mqtt() {
         mqtt_parser_version(&parser, MQTT_VERSION_5);
         rc = mqtt_parse(&parser, &bp, &pkt);
 
-        assert(rc == 1);
-        assert(pkt.ver == MQTT_VERSION_5);
-        assert(MQTT_FH_TYPE(pkt.f.flags) == MQTT_SUBACK);
-        assert(pkt.v.suback.packet_id == 0x05);
-        assert(pkt.p.suback.n == 2);
-        assert(pkt.p.suback.v5.reason_codes[0] == MQTT_RC_TOPIC_FILTER_INVALID);
-        assert(pkt.p.suback.v5.reason_codes[1] == MQTT_RC_GRANTED_QOS_1);
+        CHECK(rc == 1);
+        CHECK(pkt.ver == MQTT_VERSION_5);
+        CHECK(MQTT_FH_TYPE(pkt.f.flags) == MQTT_SUBACK);
+        CHECK(pkt.v.suback.packet_id == 0x05);
+        CHECK(pkt.p.suback.n == 2);
+        CHECK(pkt.p.suback.v5.reason_codes[0] == MQTT_RC_TOPIC_FILTER_INVALID);
+        CHECK(pkt.p.suback.v5.reason_codes[1] == MQTT_RC_GRANTED_QOS_1);
 
         mqtt_packet_cleanup(&pkt);
         mqtt_parser_cleanup(&parser);
@@ -996,7 +1003,7 @@ test_mqtt() {
         mqtt_str_from(&pkt.p.unsubscribe.topic_filters[1], "topic_filter_2");
         rc = mqtt_serialize(&pkt, &bs);
         mqtt_packet_cleanup(&pkt);
-        assert(rc == 0);
+        CHECK(rc == 0);
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
@@ -1006,13 +1013,13 @@ test_mqtt() {
         mqtt_parser_version(&parser, MQTT_VERSION_5);
         rc = mqtt_parse(&parser, &bp, &pkt);
 
-        assert(rc == 1);
-        assert(pkt.ver == MQTT_VERSION_5);
-        assert(MQTT_FH_TYPE(pkt.f.flags) == MQTT_UNSUBSCRIBE);
-        assert(pkt.v.unsubscribe.packet_id == 0x22);
-        assert(pkt.p.unsubscribe.n == 2);
-        assert(!mqtt_str_strcmp(&pkt.p.unsubscribe.topic_filters[0], "topic_filter_1"));
-        assert(!mqtt_str_strcmp(&pkt.p.unsubscribe.topic_filters[1], "topic_filter_2"));
+        CHECK(rc == 1);
+        CHECK(pkt.ver == MQTT_VERSION_5);
+        CHECK(MQTT_FH_TYPE(pkt.f.flags) == MQTT_UNSUBSCRIBE);
+        CHECK(pkt.v.unsubscribe.packet_id == 0x22);
+        CHECK(pkt.p.unsubscribe.n == 2);
+        CHECK(!mqtt_str_strcmp(&pkt.p.unsubscribe.topic_filters[0], "topic_filter_1"));
+        CHECK(!mqtt_str_strcmp(&pkt.p.unsubscribe.topic_filters[1], "topic_filter_2"));
 
         mqtt_packet_cleanup(&pkt);
         mqtt_parser_cleanup(&parser);
@@ -1027,7 +1034,7 @@ test_mqtt() {
         pkt.p.unsuback.v5.reason_codes[1] = MQTT_RC_NO_SUBSCRIPTION_EXISTED;
         rc = mqtt_serialize(&pkt, &bs);
         mqtt_packet_cleanup(&pkt);
-        assert(rc == 0);
+        CHECK(rc == 0);
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
@@ -1037,13 +1044,13 @@ test_mqtt() {
         mqtt_parser_version(&parser, MQTT_VERSION_5);
         rc = mqtt_parse(&parser, &bp, &pkt);
 
-        assert(rc == 1);
-        assert(pkt.ver == MQTT_VERSION_5);
-        assert(MQTT_FH_TYPE(pkt.f.flags) == MQTT_UNSUBACK);
-        assert(pkt.v.unsuback.packet_id == 0x05);
-        assert(pkt.p.unsuback.v5.n == 2);
-        assert(pkt.p.unsuback.v5.reason_codes[0] == MQTT_RC_TOPIC_FILTER_INVALID);
-        assert(pkt.p.unsuback.v5.reason_codes[1] == MQTT_RC_NO_SUBSCRIPTION_EXISTED);
+        CHECK(rc == 1);
+        CHECK(pkt.ver == MQTT_VERSION_5);
+        CHECK(MQTT_FH_TYPE(pkt.f.flags) == MQTT_UNSUBACK);
+        CHECK(pkt.v.unsuback.packet_id == 0x05);
+        CHECK(pkt.p.unsuback.v5.n == 2);
+        CHECK(pkt.p.unsuback.v5.reason_codes[0] == MQTT_RC_TOPIC_FILTER_INVALID);
+        CHECK(pkt.p.unsuback.v5.reason_codes[1] == MQTT_RC_NO_SUBSCRIPTION_EXISTED);
 
         mqtt_packet_cleanup(&pkt);
         mqtt_parser_cleanup(&parser);
@@ -1058,7 +1065,7 @@ test_mqtt() {
         mqtt_str_from(&pkt.p.publish.message, "publish_message");
         rc = mqtt_serialize(&pkt, &bs);
         mqtt_packet_cleanup(&pkt);
-        assert(rc == 0);
+        CHECK(rc == 0);
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
@@ -1068,15 +1075,15 @@ test_mqtt() {
         mqtt_parser_version(&parser, MQTT_VERSION_5);
         rc = mqtt_parse(&parser, &bp, &pkt);
 
-        assert(rc == 1);
-        assert(pkt.ver == MQTT_VERSION_5);
-        assert(MQTT_FH_TYPE(pkt.f.flags) == MQTT_PUBLISH);
-        assert(MQTT_FH_DUP(pkt.f.flags) == 1);
-        assert(MQTT_FH_QOS(pkt.f.flags) == MQTT_QOS_2);
-        assert(MQTT_FH_RETAIN(pkt.f.flags) == 1);
-        assert(pkt.v.publish.packet_id == 0x12);
-        assert(!mqtt_str_strcmp(&pkt.v.publish.topic_name, "publish_topic"));
-        assert(!mqtt_str_strcmp(&pkt.p.publish.message, "publish_message"));
+        CHECK(rc == 1);
+        CHECK(pkt.ver == MQTT_VERSION_5);
+        CHECK(MQTT_FH_TYPE(pkt.f.flags) == MQTT_PUBLISH);
+        CHECK(MQTT_FH_DUP(pkt.f.flags) == 1);
+        CHECK(MQTT_FH_QOS(pkt.f.flags) == MQTT_QOS_2);
+        CHECK(MQTT_FH_RETAIN(pkt.f.flags) == 1);
+        CHECK(pkt.v.publish.packet_id == 0x12);
+        CHECK(!mqtt_str_strcmp(&pkt.v.publish.topic_name, "publish_topic"));
+        CHECK(!mqtt_str_strcmp(&pkt.p.publish.message, "publish_message"));
 
         mqtt_packet_cleanup(&pkt);
         mqtt_parser_cleanup(&parser);
@@ -1088,7 +1095,7 @@ test_mqtt() {
         pkt.v.puback.packet_id = 0x22;
         rc = mqtt_serialize(&pkt, &bs);
         mqtt_packet_cleanup(&pkt);
-        assert(rc == 0);
+        CHECK(rc == 0);
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
@@ -1098,10 +1105,10 @@ test_mqtt() {
         mqtt_parser_version(&parser, MQTT_VERSION_5);
         rc = mqtt_parse(&parser, &bp, &pkt);
 
-        assert(rc == 1);
-        assert(pkt.ver == MQTT_VERSION_5);
-        assert(MQTT_FH_TYPE(pkt.f.flags) == MQTT_PUBACK);
-        assert(pkt.v.puback.packet_id == 0x22);
+        CHECK(rc == 1);
+        CHECK(pkt.ver == MQTT_VERSION_5);
+        CHECK(MQTT_FH_TYPE(pkt.f.flags) == MQTT_PUBACK);
+        CHECK(pkt.v.puback.packet_id == 0x22);
 
         mqtt_packet_cleanup(&pkt);
         mqtt_parser_cleanup(&parser);
@@ -1113,7 +1120,7 @@ test_mqtt() {
         pkt.v.puback.packet_id = 0x25;
         rc = mqtt_serialize(&pkt, &bs);
         mqtt_packet_cleanup(&pkt);
-        assert(rc == 0);
+        CHECK(rc == 0);
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
@@ -1123,10 +1130,10 @@ test_mqtt() {
         mqtt_parser_version(&parser, MQTT_VERSION_5);
         rc = mqtt_parse(&parser, &bp, &pkt);
 
-        assert(rc == 1);
-        assert(pkt.ver == MQTT_VERSION_5);
-        assert(MQTT_FH_TYPE(pkt.f.flags) == MQTT_PUBREC);
-        assert(pkt.v.puback.packet_id == 0x25);
+        CHECK(rc == 1);
+        CHECK(pkt.ver == MQTT_VERSION_5);
+        CHECK(MQTT_FH_TYPE(pkt.f.flags) == MQTT_PUBREC);
+        CHECK(pkt.v.puback.packet_id == 0x25);
 
         mqtt_packet_cleanup(&pkt);
         mqtt_parser_cleanup(&parser);
@@ -1138,7 +1145,7 @@ test_mqtt() {
         pkt.v.puback.packet_id = 0x23;
         rc = mqtt_serialize(&pkt, &bs);
         mqtt_packet_cleanup(&pkt);
-        assert(rc == 0);
+        CHECK(rc == 0);
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
@@ -1148,10 +1155,10 @@ test_mqtt() {
         mqtt_parser_version(&parser, MQTT_VERSION_5);
         rc = mqtt_parse(&parser, &bp, &pkt);
 
-        assert(rc == 1);
-        assert(pkt.ver == MQTT_VERSION_5);
-        assert(MQTT_FH_TYPE(pkt.f.flags) == MQTT_PUBREL);
-        assert(pkt.v.puback.packet_id == 0x23);
+        CHECK(rc == 1);
+        CHECK(pkt.ver == MQTT_VERSION_5);
+        CHECK(MQTT_FH_TYPE(pkt.f.flags) == MQTT_PUBREL);
+        CHECK(pkt.v.puback.packet_id == 0x23);
 
         mqtt_packet_cleanup(&pkt);
         mqtt_parser_cleanup(&parser);
@@ -1163,7 +1170,7 @@ test_mqtt() {
         pkt.v.puback.packet_id = 0x30;
         rc = mqtt_serialize(&pkt, &bs);
         mqtt_packet_cleanup(&pkt);
-        assert(rc == 0);
+        CHECK(rc == 0);
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
@@ -1173,10 +1180,10 @@ test_mqtt() {
         mqtt_parser_version(&parser, MQTT_VERSION_5);
         rc = mqtt_parse(&parser, &bp, &pkt);
 
-        assert(rc == 1);
-        assert(pkt.ver == MQTT_VERSION_5);
-        assert(MQTT_FH_TYPE(pkt.f.flags) == MQTT_PUBCOMP);
-        assert(pkt.v.puback.packet_id == 0x30);
+        CHECK(rc == 1);
+        CHECK(pkt.ver == MQTT_VERSION_5);
+        CHECK(MQTT_FH_TYPE(pkt.f.flags) == MQTT_PUBCOMP);
+        CHECK(pkt.v.puback.packet_id == 0x30);
 
         mqtt_packet_cleanup(&pkt);
         mqtt_parser_cleanup(&parser);
@@ -1187,7 +1194,7 @@ test_mqtt() {
         mqtt_packet_init(&pkt, MQTT_VERSION_5, MQTT_PINGREQ);
         rc = mqtt_serialize(&pkt, &bs);
         mqtt_packet_cleanup(&pkt);
-        assert(rc == 0);
+        CHECK(rc == 0);
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
@@ -1197,9 +1204,9 @@ test_mqtt() {
         mqtt_parser_version(&parser, MQTT_VERSION_5);
         rc = mqtt_parse(&parser, &bp, &pkt);
 
-        assert(rc == 1);
-        assert(pkt.ver == MQTT_VERSION_5);
-        assert(MQTT_FH_TYPE(pkt.f.flags) == MQTT_PINGREQ);
+        CHECK(rc == 1);
+        CHECK(pkt.ver == MQTT_VERSION_5);
+        CHECK(MQTT_FH_TYPE(pkt.f.flags) == MQTT_PINGREQ);
 
         mqtt_packet_cleanup(&pkt);
         mqtt_parser_cleanup(&parser);
@@ -1210,7 +1217,7 @@ test_mqtt() {
         mqtt_packet_init(&pkt, MQTT_VERSION_5, MQTT_PINGRESP);
         rc = mqtt_serialize(&pkt, &bs);
         mqtt_packet_cleanup(&pkt);
-        assert(rc == 0);
+        CHECK(rc == 0);
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
@@ -1220,9 +1227,9 @@ test_mqtt() {
         mqtt_parser_version(&parser, MQTT_VERSION_5);
         rc = mqtt_parse(&parser, &bp, &pkt);
 
-        assert(rc == 1);
-        assert(pkt.ver == MQTT_VERSION_5);
-        assert(MQTT_FH_TYPE(pkt.f.flags) == MQTT_PINGRESP);
+        CHECK(rc == 1);
+        CHECK(pkt.ver == MQTT_VERSION_5);
+        CHECK(MQTT_FH_TYPE(pkt.f.flags) == MQTT_PINGRESP);
 
         mqtt_packet_cleanup(&pkt);
         mqtt_parser_cleanup(&parser);
@@ -1234,7 +1241,7 @@ test_mqtt() {
         pkt.v.disconnect.v5.reason_code = MQTT_RC_SERVER_BUSY;
         rc = mqtt_serialize(&pkt, &bs);
         mqtt_packet_cleanup(&pkt);
-        assert(rc == 0);
+        CHECK(rc == 0);
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
@@ -1244,10 +1251,10 @@ test_mqtt() {
         mqtt_parser_version(&parser, MQTT_VERSION_5);
         rc = mqtt_parse(&parser, &bp, &pkt);
 
-        assert(rc == 1);
-        assert(pkt.ver == MQTT_VERSION_5);
-        assert(MQTT_FH_TYPE(pkt.f.flags) == MQTT_DISCONNECT);
-        assert(pkt.v.disconnect.v5.reason_code == MQTT_RC_SERVER_BUSY);
+        CHECK(rc == 1);
+        CHECK(pkt.ver == MQTT_VERSION_5);
+        CHECK(MQTT_FH_TYPE(pkt.f.flags) == MQTT_DISCONNECT);
+        CHECK(pkt.v.disconnect.v5.reason_code == MQTT_RC_SERVER_BUSY);
 
         mqtt_packet_cleanup(&pkt);
         mqtt_parser_cleanup(&parser);
@@ -1260,7 +1267,7 @@ test_mqtt() {
         pkt.v.auth.v5.reason_code = MQTT_RC_RE_AUTHENTICATE;
         rc = mqtt_serialize(&pkt, &bs);
         mqtt_packet_cleanup(&pkt);
-        assert(rc == 0);
+        CHECK(rc == 0);
 
         mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
@@ -1270,10 +1277,10 @@ test_mqtt() {
         mqtt_parser_version(&parser, MQTT_VERSION_5);
         rc = mqtt_parse(&parser, &bp, &pkt);
 
-        assert(rc == 1);
-        assert(pkt.ver == MQTT_VERSION_5);
-        assert(MQTT_FH_TYPE(pkt.f.flags) == MQTT_AUTH);
-        assert(pkt.v.auth.v5.reason_code == MQTT_RC_RE_AUTHENTICATE);
+        CHECK(rc == 1);
+        CHECK(pkt.ver == MQTT_VERSION_5);
+        CHECK(MQTT_FH_TYPE(pkt.f.flags) == MQTT_AUTH);
+        CHECK(pkt.v.auth.v5.reason_code == MQTT_RC_RE_AUTHENTICATE);
 
         mqtt_packet_cleanup(&pkt);
         mqtt_parser_cleanup(&parser);
@@ -1300,7 +1307,7 @@ test_mqtt() {
         pkt.p.publish.message.s = s;
         rc = mqtt_serialize(&pkt, &bs);
         mqtt_packet_cleanup(&pkt);
-        assert(rc == 0);
+        CHECK(rc == 0);
 
         // mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
@@ -1310,17 +1317,17 @@ test_mqtt() {
         mqtt_parser_version(&parser, MQTT_VERSION_3);
         rc = mqtt_parse(&parser, &bp, &pkt);
 
-        assert(rc == 1);
-        assert(pkt.ver == MQTT_VERSION_3);
-        assert(MQTT_FH_TYPE(pkt.f.flags) == MQTT_PUBLISH);
-        assert(MQTT_FH_DUP(pkt.f.flags) == 1);
-        assert(MQTT_FH_QOS(pkt.f.flags) == MQTT_QOS_2);
-        assert(MQTT_FH_RETAIN(pkt.f.flags) == 1);
-        assert(pkt.v.publish.packet_id == 0x12);
-        assert(!mqtt_str_strcmp(&pkt.v.publish.topic_name, "publish_topic"));
-        assert(pkt.p.publish.message.n == 100);
-        assert(pkt.p.publish.message.s[0] == 'K');
-        assert(pkt.p.publish.message.s[99] == 'K');
+        CHECK(rc == 1);
+        CHECK(pkt.ver == MQTT_VERSION_3);
+        CHECK(MQTT_FH_TYPE(pkt.f.flags) == MQTT_PUBLISH);
+        CHECK(MQTT_FH_DUP(pkt.f.flags) == 1);
+        CHECK(MQTT_FH_QOS(pkt.f.flags) == MQTT_QOS_2);
+        CHECK(MQTT_FH_RETAIN(pkt.f.flags) == 1);
+        CHECK(pkt.v.publish.packet_id == 0x12);
+        CHECK(!mqtt_str_strcmp(&pkt.v.publish.topic_name, "publish_topic"));
+        CHECK(pkt.p.publish.message.n == 100);
+        CHECK(pkt.p.publish.message.s[0] == 'K');
+        CHECK(pkt.p.publish.message.s[99] == 'K');
 
         mqtt_packet_cleanup(&pkt);
         mqtt_parser_cleanup(&parser);
@@ -1339,7 +1346,7 @@ test_mqtt() {
         pkt.p.publish.message.s = s;
         rc = mqtt_serialize(&pkt, &bs);
         mqtt_packet_cleanup(&pkt);
-        assert(rc == 0);
+        CHECK(rc == 0);
 
         // mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
@@ -1349,17 +1356,17 @@ test_mqtt() {
         mqtt_parser_version(&parser, MQTT_VERSION_3);
         rc = mqtt_parse(&parser, &bp, &pkt);
 
-        assert(rc == 1);
-        assert(pkt.ver == MQTT_VERSION_3);
-        assert(MQTT_FH_TYPE(pkt.f.flags) == MQTT_PUBLISH);
-        assert(MQTT_FH_DUP(pkt.f.flags) == 1);
-        assert(MQTT_FH_QOS(pkt.f.flags) == MQTT_QOS_2);
-        assert(MQTT_FH_RETAIN(pkt.f.flags) == 1);
-        assert(pkt.v.publish.packet_id == 0x12);
-        assert(!mqtt_str_strcmp(&pkt.v.publish.topic_name, "publish_topic"));
-        assert(pkt.p.publish.message.n == 10000);
-        assert(pkt.p.publish.message.s[0] == 'K');
-        assert(pkt.p.publish.message.s[9999] == 'K');
+        CHECK(rc == 1);
+        CHECK(pkt.ver == MQTT_VERSION_3);
+        CHECK(MQTT_FH_TYPE(pkt.f.flags) == MQTT_PUBLISH);
+        CHECK(MQTT_FH_DUP(pkt.f.flags) == 1);
+        CHECK(MQTT_FH_QOS(pkt.f.flags) == MQTT_QOS_2);
+        CHECK(MQTT_FH_RETAIN(pkt.f.flags) == 1);
+        CHECK(pkt.v.publish.packet_id == 0x12);
+        CHECK(!mqtt_str_strcmp(&pkt.v.publish.topic_name, "publish_topic"));
+        CHECK(pkt.p.publish.message.n == 10000);
+        CHECK(pkt.p.publish.message.s[0] == 'K');
+        CHECK(pkt.p.publish.message.s[9999] == 'K');
 
         mqtt_packet_cleanup(&pkt);
         mqtt_parser_cleanup(&parser);
@@ -1378,7 +1385,7 @@ test_mqtt() {
         pkt.p.publish.message.s = s;
         rc = mqtt_serialize(&pkt, &bs);
         mqtt_packet_cleanup(&pkt);
-        assert(rc == 0);
+        CHECK(rc == 0);
 
         // mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
@@ -1388,17 +1395,17 @@ test_mqtt() {
         mqtt_parser_version(&parser, MQTT_VERSION_3);
         rc = mqtt_parse(&parser, &bp, &pkt);
 
-        assert(rc == 1);
-        assert(pkt.ver == MQTT_VERSION_3);
-        assert(MQTT_FH_TYPE(pkt.f.flags) == MQTT_PUBLISH);
-        assert(MQTT_FH_DUP(pkt.f.flags) == 1);
-        assert(MQTT_FH_QOS(pkt.f.flags) == MQTT_QOS_2);
-        assert(MQTT_FH_RETAIN(pkt.f.flags) == 1);
-        assert(pkt.v.publish.packet_id == 0x12);
-        assert(!mqtt_str_strcmp(&pkt.v.publish.topic_name, "publish_topic"));
-        assert(pkt.p.publish.message.n == 2000000);
-        assert(pkt.p.publish.message.s[0] == 'K');
-        assert(pkt.p.publish.message.s[9999] == 'K');
+        CHECK(rc == 1);
+        CHECK(pkt.ver == MQTT_VERSION_3);
+        CHECK(MQTT_FH_TYPE(pkt.f.flags) == MQTT_PUBLISH);
+        CHECK(MQTT_FH_DUP(pkt.f.flags) == 1);
+        CHECK(MQTT_FH_QOS(pkt.f.flags) == MQTT_QOS_2);
+        CHECK(MQTT_FH_RETAIN(pkt.f.flags) == 1);
+        CHECK(pkt.v.publish.packet_id == 0x12);
+        CHECK(!mqtt_str_strcmp(&pkt.v.publish.topic_name, "publish_topic"));
+        CHECK(pkt.p.publish.message.n == 2000000);
+        CHECK(pkt.p.publish.message.s[0] == 'K');
+        CHECK(pkt.p.publish.message.s[9999] == 'K');
 
         mqtt_packet_cleanup(&pkt);
         mqtt_parser_cleanup(&parser);
@@ -1417,7 +1424,7 @@ test_mqtt() {
         pkt.p.publish.message.s = s;
         rc = mqtt_serialize(&pkt, &bs);
         mqtt_packet_cleanup(&pkt);
-        assert(rc == 0);
+        CHECK(rc == 0);
 
         // mqtt_str_dump(&bs, 0, 0);
         mqtt_str_set(&bp, &bs);
@@ -1427,17 +1434,17 @@ test_mqtt() {
         mqtt_parser_version(&parser, MQTT_VERSION_3);
         rc = mqtt_parse(&parser, &bp, &pkt);
 
-        assert(rc == 1);
-        assert(pkt.ver == MQTT_VERSION_3);
-        assert(MQTT_FH_TYPE(pkt.f.flags) == MQTT_PUBLISH);
-        assert(MQTT_FH_DUP(pkt.f.flags) == 1);
-        assert(MQTT_FH_QOS(pkt.f.flags) == MQTT_QOS_2);
-        assert(MQTT_FH_RETAIN(pkt.f.flags) == 1);
-        assert(pkt.v.publish.packet_id == 0x12);
-        assert(!mqtt_str_strcmp(&pkt.v.publish.topic_name, "publish_topic"));
-        assert(pkt.p.publish.message.n == 26800000);
-        assert(pkt.p.publish.message.s[0] == 'K');
-        assert(pkt.p.publish.message.s[9999] == 'K');
+        CHECK(rc == 1);
+        CHECK(pkt.ver == MQTT_VERSION_3);
+        CHECK(MQTT_FH_TYPE(pkt.f.flags) == MQTT_PUBLISH);
+        CHECK(MQTT_FH_DUP(pkt.f.flags) == 1);
+        CHECK(MQTT_FH_QOS(pkt.f.flags) == MQTT_QOS_2);
+        CHECK(MQTT_FH_RETAIN(pkt.f.flags) == 1);
+        CHECK(pkt.v.publish.packet_id == 0x12);
+        CHECK(!mqtt_str_strcmp(&pkt.v.publish.topic_name, "publish_topic"));
+        CHECK(pkt.p.publish.message.n == 26800000);
+        CHECK(pkt.p.publish.message.s[0] == 'K');
+        CHECK(pkt.p.publish.message.s[9999] == 'K');
 
         mqtt_packet_cleanup(&pkt);
         mqtt_parser_cleanup(&parser);
@@ -1461,7 +1468,7 @@ test_mqtt() {
         mqtt_parser_version(&parser, MQTT_VERSION_3);
         rc = mqtt_parse(&parser, &bp, &pkt);
 
-        assert(rc == -1);
+        CHECK(rc == -1);
 
         mqtt_packet_cleanup(&pkt);
         mqtt_parser_cleanup(&parser);
@@ -1492,13 +1499,13 @@ test_mqtt_sn() {
     mqtt_sn_parser_init(&parser);
     rc = mqtt_sn_parse(&parser, &bp, &pkt);
 
-    assert(rc == 1);
-    assert(pkt.type == MQTT_SN_CONNECT);
-    assert((pkt.v.connect.flags.flag & MQTT_SNF_WILL) != 0);
-    assert((pkt.v.connect.flags.flag & MQTT_SNF_CLEAN_SESSION) != 0);
-    assert(pkt.v.connect.protocol_id == MQTT_SN_PROTOCOL_VERSION);
-    assert(!mqtt_str_strcmp(&pkt.v.connect.client_id, "mqtt_sn_client_id"));
-    assert(pkt.v.connect.duration == 900);
+    CHECK(rc == 1);
+    CHECK(pkt.type == MQTT_SN_CONNECT);
+    CHECK((pkt.v.connect.flags.flag & MQTT_SNF_WILL) != 0);
+    CHECK((pkt.v.connect.flags.flag & MQTT_SNF_CLEAN_SESSION) != 0);
+    CHECK(pkt.v.connect.protocol_id == MQTT_SN_PROTOCOL_VERSION);
+    CHECK(!mqtt_str_strcmp(&pkt.v.connect.client_id, "mqtt_sn_client_id"));
+    CHECK(pkt.v.connect.duration == 900);
 
     mqtt_sn_packet_cleanup(&pkt);
     mqtt_sn_parser_cleanup(&parser);
@@ -1517,9 +1524,9 @@ test_mqtt_sn() {
     mqtt_sn_parser_init(&parser);
     rc = mqtt_sn_parse(&parser, &bp, &pkt);
 
-    assert(rc == 1);
-    assert(pkt.type == MQTT_SN_CONNACK);
-    assert(pkt.v.connack.return_code == MQTT_SN_RC_REJECTED_NOT_SUPPORTED);
+    CHECK(rc == 1);
+    CHECK(pkt.type == MQTT_SN_CONNACK);
+    CHECK(pkt.v.connack.return_code == MQTT_SN_RC_REJECTED_NOT_SUPPORTED);
 
     mqtt_sn_packet_cleanup(&pkt);
     mqtt_sn_parser_cleanup(&parser);
@@ -1541,12 +1548,12 @@ test_mqtt_sn() {
     mqtt_sn_parser_init(&parser);
     rc = mqtt_sn_parse(&parser, &bp, &pkt);
 
-    assert(rc == 1);
-    assert(pkt.type == MQTT_SN_SUBSCRIBE);
-    assert(MQTT_SNF_QOS(pkt.v.subscribe.flags.flag) == MQTT_SN_QOS_2);
-    assert(MQTT_SNF_TID_TYPE(pkt.v.subscribe.flags.flag) == MQTT_SN_TOPIC_ID_TYPE_PREDEFINED);
-    assert(pkt.v.subscribe.msg_id == 0x10);
-    assert(pkt.v.subscribe.topic.id == 0x20);
+    CHECK(rc == 1);
+    CHECK(pkt.type == MQTT_SN_SUBSCRIBE);
+    CHECK(MQTT_SNF_QOS(pkt.v.subscribe.flags.flag) == MQTT_SN_QOS_2);
+    CHECK(MQTT_SNF_TID_TYPE(pkt.v.subscribe.flags.flag) == MQTT_SN_TOPIC_ID_TYPE_PREDEFINED);
+    CHECK(pkt.v.subscribe.msg_id == 0x10);
+    CHECK(pkt.v.subscribe.topic.id == 0x20);
 
     mqtt_sn_packet_cleanup(&pkt);
     mqtt_sn_parser_cleanup(&parser);
@@ -1567,11 +1574,11 @@ test_mqtt_sn() {
     mqtt_sn_parser_init(&parser);
     rc = mqtt_sn_parse(&parser, &bp, &pkt);
 
-    assert(rc == 1);
-    assert(pkt.type == MQTT_SN_SUBACK);
-    assert(MQTT_SNF_QOS(pkt.v.suback.flags.flag) == MQTT_SN_QOS_1);
-    assert(pkt.v.suback.msg_id == 0x30);
-    assert(pkt.v.suback.return_code == MQTT_SN_RC_REJECTED_TOPIC_ID);
+    CHECK(rc == 1);
+    CHECK(pkt.type == MQTT_SN_SUBACK);
+    CHECK(MQTT_SNF_QOS(pkt.v.suback.flags.flag) == MQTT_SN_QOS_1);
+    CHECK(pkt.v.suback.msg_id == 0x30);
+    CHECK(pkt.v.suback.return_code == MQTT_SN_RC_REJECTED_TOPIC_ID);
 
     mqtt_sn_packet_cleanup(&pkt);
     mqtt_sn_parser_cleanup(&parser);
@@ -1593,12 +1600,12 @@ test_mqtt_sn() {
     mqtt_sn_parser_init(&parser);
     rc = mqtt_sn_parse(&parser, &bp, &pkt);
 
-    assert(rc == 1);
-    assert(pkt.type == MQTT_SN_UNSUBSCRIBE);
-    assert(MQTT_SNF_TID_TYPE(pkt.v.unsubscribe.flags.flag) == MQTT_SN_TOPIC_ID_TYPE_SHORT);
-    assert(pkt.v.unsubscribe.msg_id == 0x40);
-    assert(pkt.v.unsubscribe.topic.shor[0] == 'A');
-    assert(pkt.v.unsubscribe.topic.shor[1] == 'B');
+    CHECK(rc == 1);
+    CHECK(pkt.type == MQTT_SN_UNSUBSCRIBE);
+    CHECK(MQTT_SNF_TID_TYPE(pkt.v.unsubscribe.flags.flag) == MQTT_SN_TOPIC_ID_TYPE_SHORT);
+    CHECK(pkt.v.unsubscribe.msg_id == 0x40);
+    CHECK(pkt.v.unsubscribe.topic.shor[0] == 'A');
+    CHECK(pkt.v.unsubscribe.topic.shor[1] == 'B');
 
     mqtt_sn_packet_cleanup(&pkt);
     mqtt_sn_parser_cleanup(&parser);
@@ -1617,9 +1624,9 @@ test_mqtt_sn() {
     mqtt_sn_parser_init(&parser);
     rc = mqtt_sn_parse(&parser, &bp, &pkt);
 
-    assert(rc == 1);
-    assert(pkt.type == MQTT_SN_UNSUBACK);
-    assert(pkt.v.unsuback.msg_id == 0x50);
+    CHECK(rc == 1);
+    CHECK(pkt.type == MQTT_SN_UNSUBACK);
+    CHECK(pkt.v.unsuback.msg_id == 0x50);
 
     mqtt_sn_packet_cleanup(&pkt);
     mqtt_sn_parser_cleanup(&parser);
@@ -1643,14 +1650,14 @@ test_mqtt_sn() {
     mqtt_sn_parser_init(&parser);
     rc = mqtt_sn_parse(&parser, &bp, &pkt);
 
-    assert(rc == 1);
-    assert(pkt.type == MQTT_SN_PUBLISH);
-    assert((pkt.v.publish.flags.flag & MQTT_SNF_DUP) != 0);
-    assert(MQTT_SNF_QOS(pkt.v.publish.flags.flag) == MQTT_SN_QOS_1);
-    assert(MQTT_SNF_TID_TYPE(pkt.v.publish.flags.flag) == MQTT_SN_TOPIC_ID_TYPE_PREDEFINED);
-    assert(pkt.v.publish.msg_id == 0x22);
-    assert(pkt.v.publish.topic.id == 0x12);
-    assert(!mqtt_str_strcmp(&pkt.v.publish.data, "mqtt_sn_publish"));
+    CHECK(rc == 1);
+    CHECK(pkt.type == MQTT_SN_PUBLISH);
+    CHECK((pkt.v.publish.flags.flag & MQTT_SNF_DUP) != 0);
+    CHECK(MQTT_SNF_QOS(pkt.v.publish.flags.flag) == MQTT_SN_QOS_1);
+    CHECK(MQTT_SNF_TID_TYPE(pkt.v.publish.flags.flag) == MQTT_SN_TOPIC_ID_TYPE_PREDEFINED);
+    CHECK(pkt.v.publish.msg_id == 0x22);
+    CHECK(pkt.v.publish.topic.id == 0x12);
+    CHECK(!mqtt_str_strcmp(&pkt.v.publish.data, "mqtt_sn_publish"));
 
     mqtt_sn_packet_cleanup(&pkt);
     mqtt_sn_parser_cleanup(&parser);
@@ -1671,11 +1678,11 @@ test_mqtt_sn() {
     mqtt_sn_parser_init(&parser);
     rc = mqtt_sn_parse(&parser, &bp, &pkt);
 
-    assert(rc == 1);
-    assert(pkt.type == MQTT_SN_PUBACK);
-    assert(pkt.v.puback.msg_id == 0x11);
-    assert(pkt.v.puback.return_code == MQTT_SN_RC_ACCEPTED);
-    assert(pkt.v.puback.topic.id == 0x12);
+    CHECK(rc == 1);
+    CHECK(pkt.type == MQTT_SN_PUBACK);
+    CHECK(pkt.v.puback.msg_id == 0x11);
+    CHECK(pkt.v.puback.return_code == MQTT_SN_RC_ACCEPTED);
+    CHECK(pkt.v.puback.topic.id == 0x12);
 
     mqtt_sn_packet_cleanup(&pkt);
     mqtt_sn_parser_cleanup(&parser);
@@ -1693,8 +1700,8 @@ test_mqtt_sn() {
     mqtt_sn_parser_init(&parser);
     rc = mqtt_sn_parse(&parser, &bp, &pkt);
 
-    assert(rc == 1);
-    assert(pkt.type == MQTT_SN_PUBREC);
+    CHECK(rc == 1);
+    CHECK(pkt.type == MQTT_SN_PUBREC);
 
     mqtt_sn_packet_cleanup(&pkt);
     mqtt_sn_parser_cleanup(&parser);
@@ -1712,8 +1719,8 @@ test_mqtt_sn() {
     mqtt_sn_parser_init(&parser);
     rc = mqtt_sn_parse(&parser, &bp, &pkt);
 
-    assert(rc == 1);
-    assert(pkt.type == MQTT_SN_PUBREL);
+    CHECK(rc == 1);
+    CHECK(pkt.type == MQTT_SN_PUBREL);
 
     mqtt_sn_packet_cleanup(&pkt);
     mqtt_sn_parser_cleanup(&parser);
@@ -1731,8 +1738,8 @@ test_mqtt_sn() {
     mqtt_sn_parser_init(&parser);
     rc = mqtt_sn_parse(&parser, &bp, &pkt);
 
-    assert(rc == 1);
-    assert(pkt.type == MQTT_SN_PUBCOMP);
+    CHECK(rc == 1);
+    CHECK(pkt.type == MQTT_SN_PUBCOMP);
 
     mqtt_sn_packet_cleanup(&pkt);
     mqtt_sn_parser_cleanup(&parser);
@@ -1750,8 +1757,8 @@ test_mqtt_sn() {
     mqtt_sn_parser_init(&parser);
     rc = mqtt_sn_parse(&parser, &bp, &pkt);
 
-    assert(rc == 1);
-    assert(pkt.type == MQTT_SN_PINGREQ);
+    CHECK(rc == 1);
+    CHECK(pkt.type == MQTT_SN_PINGREQ);
 
     mqtt_sn_packet_cleanup(&pkt);
     mqtt_sn_parser_cleanup(&parser);
@@ -1769,8 +1776,8 @@ test_mqtt_sn() {
     mqtt_sn_parser_init(&parser);
     rc = mqtt_sn_parse(&parser, &bp, &pkt);
 
-    assert(rc == 1);
-    assert(pkt.type == MQTT_SN_PINGRESP);
+    CHECK(rc == 1);
+    CHECK(pkt.type == MQTT_SN_PINGRESP);
 
     mqtt_sn_packet_cleanup(&pkt);
     mqtt_sn_parser_cleanup(&parser);
@@ -1789,9 +1796,9 @@ test_mqtt_sn() {
     mqtt_sn_parser_init(&parser);
     rc = mqtt_sn_parse(&parser, &bp, &pkt);
 
-    assert(rc == 1);
-    assert(pkt.type == MQTT_SN_DISCONNECT);
-    assert(pkt.v.disconnect.duration == 600);
+    CHECK(rc == 1);
+    CHECK(pkt.type == MQTT_SN_DISCONNECT);
+    CHECK(pkt.v.disconnect.duration == 600);
 
     mqtt_sn_packet_cleanup(&pkt);
     mqtt_sn_parser_cleanup(&parser);
@@ -1822,13 +1829,13 @@ test_mqtt_sn() {
     mqtt_sn_parser_init(&parser);
     rc = mqtt_sn_parse(&parser, &bp, &pkt);
 
-    assert(rc == 1);
-    assert(pkt.type == MQTT_SN_PUBLISH);
-    assert((pkt.v.publish.flags.flag & MQTT_SNF_DUP) != 0);
-    assert(MQTT_SNF_QOS(pkt.v.publish.flags.flag) == MQTT_SN_QOS_1);
-    assert(MQTT_SNF_TID_TYPE(pkt.v.publish.flags.flag) == MQTT_SN_TOPIC_ID_TYPE_PREDEFINED);
-    assert(pkt.v.publish.msg_id == 0x22);
-    assert(pkt.v.publish.topic.id == 0x12);
+    CHECK(rc == 1);
+    CHECK(pkt.type == MQTT_SN_PUBLISH);
+    CHECK((pkt.v.publish.flags.flag & MQTT_SNF_DUP) != 0);
+    CHECK(MQTT_SNF_QOS(pkt.v.publish.flags.flag) == MQTT_SN_QOS_1);
+    CHECK(MQTT_SNF_TID_TYPE(pkt.v.publish.flags.flag) == MQTT_SN_TOPIC_ID_TYPE_PREDEFINED);
+    CHECK(pkt.v.publish.msg_id == 0x22);
+    CHECK(pkt.v.publish.topic.id == 0x12);
     pkt.v.publish.data.n = 65000;
 
     mqtt_sn_packet_cleanup(&pkt);
@@ -1880,7 +1887,7 @@ test_mqtt_random() {
             mqtt_parser_init(&parser2);
             mqtt_parser_version(&parser2, pkt.ver);
             rc2 = mqtt_parse(&parser2, &rb, &pkt2);
-            assert(rc2 == 1);
+            CHECK(rc2 == 1);
             mqtt_packet_cleanup(&pkt2);
             mqtt_parser_cleanup(&parser2);
             mqtt_str_free(&rb);
@@ -1932,7 +1939,7 @@ test_mqtt_sn_random() {
             rb.i = 0;
             mqtt_sn_parser_init(&parser2);
             rc2 = mqtt_sn_parse(&parser2, &rb, &pkt2);
-            assert(rc2 == 1);
+            CHECK(rc2 == 1);
             mqtt_sn_packet_cleanup(&pkt2);
             mqtt_sn_parser_cleanup(&parser2);
             mqtt_str_free(&rb);
@@ -1961,14 +1968,14 @@ test_mqtt_hardening() {
         pkt.p.suback.v5.reason_codes[0] = MQTT_RC_GRANTED_QOS_0;
         rc = mqtt_serialize(&pkt, &bs);
         mqtt_packet_cleanup(&pkt);
-        assert(rc == 0);
+        CHECK(rc == 0);
         mqtt_str_set(&bp, &bs);
         bp.i = 0;
         mqtt_parser_init(&parser);
         mqtt_parser_version(&parser, MQTT_VERSION_5);
         rc = mqtt_parse(&parser, &bp, &pkt);
-        assert(rc == 1);
-        assert(pkt.p.suback.v5.reason_codes[0] == MQTT_RC_GRANTED_QOS_0);
+        CHECK(rc == 1);
+        CHECK(pkt.p.suback.v5.reason_codes[0] == MQTT_RC_GRANTED_QOS_0);
         mqtt_packet_cleanup(&pkt);
         mqtt_parser_cleanup(&parser);
         mqtt_str_free(&bs);
@@ -1977,14 +1984,14 @@ test_mqtt_hardening() {
         pkt.v.disconnect.v5.reason_code = MQTT_RC_NORMAL_DISCONNECTION;
         rc = mqtt_serialize(&pkt, &bs);
         mqtt_packet_cleanup(&pkt);
-        assert(rc == 0);
+        CHECK(rc == 0);
         mqtt_str_set(&bp, &bs);
         bp.i = 0;
         mqtt_parser_init(&parser);
         mqtt_parser_version(&parser, MQTT_VERSION_5);
         rc = mqtt_parse(&parser, &bp, &pkt);
-        assert(rc == 1);
-        assert(pkt.v.disconnect.v5.reason_code == MQTT_RC_NORMAL_DISCONNECTION);
+        CHECK(rc == 1);
+        CHECK(pkt.v.disconnect.v5.reason_code == MQTT_RC_NORMAL_DISCONNECTION);
         mqtt_packet_cleanup(&pkt);
         mqtt_parser_cleanup(&parser);
         mqtt_str_free(&bs);
@@ -1994,7 +2001,7 @@ test_mqtt_hardening() {
         pkt.v.disconnect.v5.reason_code = (mqtt_rc_t)0x03;
         rc = mqtt_serialize(&pkt, &bs);
         mqtt_packet_cleanup(&pkt);
-        assert(rc == -1);
+        CHECK(rc == -1);
     }
 
     /* packet id 0 rejected on serialize. */
@@ -2006,13 +2013,13 @@ test_mqtt_hardening() {
         mqtt_str_from(&pkt.p.publish.message, "m");
         rc = mqtt_serialize(&pkt, &bs);
         mqtt_packet_cleanup(&pkt);
-        assert(rc == -1);
+        CHECK(rc == -1);
 
         mqtt_packet_init(&pkt, MQTT_VERSION_3, MQTT_PUBACK);
         pkt.v.puback.packet_id = 0;
         rc = mqtt_serialize(&pkt, &bs);
         mqtt_packet_cleanup(&pkt);
-        assert(rc == -1);
+        CHECK(rc == -1);
 
         mqtt_packet_init(&pkt, MQTT_VERSION_3, MQTT_SUBSCRIBE);
         pkt.v.subscribe.packet_id = 0;
@@ -2020,7 +2027,7 @@ test_mqtt_hardening() {
         mqtt_str_from(&pkt.p.subscribe.topic_filters[0], "t");
         rc = mqtt_serialize(&pkt, &bs);
         mqtt_packet_cleanup(&pkt);
-        assert(rc == -1);
+        CHECK(rc == -1);
     }
 
     /* packet id 0 rejected on parse. */
@@ -2030,7 +2037,7 @@ test_mqtt_hardening() {
         mqtt_parser_init(&parser);
         mqtt_parser_version(&parser, MQTT_VERSION_3);
         rc = mqtt_parse(&parser, &bp, &pkt);
-        assert(rc == -1);
+        CHECK(rc == -1);
         mqtt_parser_cleanup(&parser);
     }
 
@@ -2041,7 +2048,7 @@ test_mqtt_hardening() {
         mqtt_parser_init(&parser);
         mqtt_parser_version(&parser, MQTT_VERSION_5);
         rc = mqtt_parse(&parser, &bp, &pkt);
-        assert(rc == -1);
+        CHECK(rc == -1);
         mqtt_parser_cleanup(&parser);
     }
 
@@ -2052,7 +2059,7 @@ test_mqtt_hardening() {
         mqtt_parser_init(&parser);
         mqtt_parser_version(&parser, MQTT_VERSION_5);
         rc = mqtt_parse(&parser, &bp, &pkt);
-        assert(rc == -1);
+        CHECK(rc == -1);
         mqtt_parser_cleanup(&parser);
     }
 
@@ -2064,7 +2071,7 @@ test_mqtt_hardening() {
         mqtt_properties_add(&pkt.v.connect.v5.properties, MQTT_PROPERTY_RECEIVE_MAXIMUM, &zero16, 0);
         rc = mqtt_serialize(&pkt, &bs);
         mqtt_packet_cleanup(&pkt);
-        assert(rc == -1);
+        CHECK(rc == -1);
     }
 
     /* property order kept, user property may repeat. */
@@ -2080,24 +2087,24 @@ test_mqtt_hardening() {
         mqtt_properties_add(&pkt.v.publish.v5.properties, MQTT_PROPERTY_USER_PROPERTY, "v2", "k2");
         rc = mqtt_serialize(&pkt, &bs);
         mqtt_packet_cleanup(&pkt);
-        assert(rc == 0);
+        CHECK(rc == 0);
         mqtt_str_set(&bp, &bs);
         bp.i = 0;
         mqtt_parser_init(&parser);
         mqtt_parser_version(&parser, MQTT_VERSION_5);
         rc = mqtt_parse(&parser, &bp, &pkt);
-        assert(rc == 1);
+        CHECK(rc == 1);
         prop = pkt.v.publish.v5.properties.head;
-        assert(prop && prop->code == MQTT_PROPERTY_PAYLOAD_FORMAT_INDICATOR);
+        CHECK(prop && prop->code == MQTT_PROPERTY_PAYLOAD_FORMAT_INDICATOR);
         prop = prop->next;
-        assert(prop && prop->code == MQTT_PROPERTY_RESPONSE_TOPIC);
+        CHECK(prop && prop->code == MQTT_PROPERTY_RESPONSE_TOPIC);
         prop = prop->next;
-        assert(prop && prop->code == MQTT_PROPERTY_USER_PROPERTY);
-        assert(!mqtt_str_strcmp(&prop->pair.name, "k1"));
+        CHECK(prop && prop->code == MQTT_PROPERTY_USER_PROPERTY);
+        CHECK(!mqtt_str_strcmp(&prop->pair.name, "k1"));
         prop = prop->next;
-        assert(prop && prop->code == MQTT_PROPERTY_USER_PROPERTY);
-        assert(!mqtt_str_strcmp(&prop->pair.name, "k2"));
-        assert(!prop->next);
+        CHECK(prop && prop->code == MQTT_PROPERTY_USER_PROPERTY);
+        CHECK(!mqtt_str_strcmp(&prop->pair.name, "k2"));
+        CHECK(!prop->next);
         mqtt_packet_cleanup(&pkt);
         mqtt_parser_cleanup(&parser);
         mqtt_str_free(&bs);
@@ -2109,7 +2116,7 @@ test_mqtt_hardening() {
         mqtt_str_init(&bp, ping, sizeof ping);
         mqtt_parser_init(&parser);
         rc = mqtt_parse(&parser, &bp, &pkt);
-        assert(rc == -1);
+        CHECK(rc == -1);
         mqtt_parser_cleanup(&parser);
 
         mqtt_packet_init(&pkt, MQTT_VERSION_4, MQTT_CONNECT);
@@ -2117,19 +2124,19 @@ test_mqtt_hardening() {
         mqtt_str_from(&pkt.p.connect.client_id, "mqtt");
         rc = mqtt_serialize(&pkt, &bs);
         mqtt_packet_cleanup(&pkt);
-        assert(rc == 0);
+        CHECK(rc == 0);
         bs.s[8] = 0x07; /* invalid protocol version */
         mqtt_str_set(&bp, &bs);
         bp.i = 0;
         mqtt_parser_init(&parser);
         rc = mqtt_parse(&parser, &bp, &pkt);
-        assert(rc == -1);
-        assert(parser.version == (mqtt_version_t)0);
+        CHECK(rc == -1);
+        CHECK(parser.version == (mqtt_version_t)0);
         bs.s[8] = 0x04;
         bp.i = 0;
         rc = mqtt_parse(&parser, &bp, &pkt);
-        assert(rc == 1);
-        assert(parser.version == MQTT_VERSION_4);
+        CHECK(rc == 1);
+        CHECK(parser.version == MQTT_VERSION_4);
         mqtt_packet_cleanup(&pkt);
         mqtt_parser_cleanup(&parser);
         mqtt_str_free(&bs);
@@ -2141,7 +2148,7 @@ test_mqtt_hardening() {
         mqtt_str_init(&pkt.p.connect.client_id, (char *)"a\0b", 3);
         rc = mqtt_serialize(&pkt, &bs);
         mqtt_packet_cleanup(&pkt);
-        assert(rc == -1);
+        CHECK(rc == -1);
 
         mqtt_packet_init(&pkt, MQTT_VERSION_3, MQTT_SUBSCRIBE);
         pkt.v.subscribe.packet_id = 0x01;
@@ -2149,7 +2156,7 @@ test_mqtt_hardening() {
         mqtt_str_from(&pkt.p.subscribe.topic_filters[0], "a#");
         rc = mqtt_serialize(&pkt, &bs);
         mqtt_packet_cleanup(&pkt);
-        assert(rc == -1);
+        CHECK(rc == -1);
 
         mqtt_packet_init(&pkt, MQTT_VERSION_3, MQTT_CONNECT);
         pkt.v.connect.connect_flags |= MQTT_CF_WILL_FLAG;
@@ -2158,7 +2165,7 @@ test_mqtt_hardening() {
         mqtt_str_from(&pkt.p.connect.will_message, "w");
         rc = mqtt_serialize(&pkt, &bs);
         mqtt_packet_cleanup(&pkt);
-        assert(rc == -1);
+        CHECK(rc == -1);
     }
 
     /* error resets the parser so it can keep consuming. */
@@ -2169,10 +2176,10 @@ test_mqtt_hardening() {
         mqtt_parser_init(&parser);
         mqtt_parser_version(&parser, MQTT_VERSION_3);
         rc = mqtt_parse(&parser, &bp, &pkt);
-        assert(rc == -1);
+        CHECK(rc == -1);
         rc = mqtt_parse(&parser, &bp, &pkt);
-        assert(rc == 1);
-        assert(MQTT_FH_TYPE(pkt.f.flags) == MQTT_PINGREQ);
+        CHECK(rc == 1);
+        CHECK(MQTT_FH_TYPE(pkt.f.flags) == MQTT_PINGREQ);
         mqtt_packet_cleanup(&pkt);
         mqtt_parser_cleanup(&parser);
     }
@@ -2184,7 +2191,7 @@ test_mqtt_hardening() {
         mqtt_parser_init(&parser);
         mqtt_parser_version(&parser, MQTT_VERSION_3);
         rc = mqtt_parse(&parser, &bp, 0);
-        assert(rc == 1);
+        CHECK(rc == 1);
         mqtt_parser_cleanup(&parser);
     }
 
@@ -2197,12 +2204,12 @@ test_mqtt_hardening() {
         mqtt_str_from(&pkt.p.publish.message, "m");
         mqtt_str_init(&bb, buf, sizeof buf);
         rc = mqtt_serialize(&pkt, &bb);
-        assert(rc == 0);
-        assert(bb.n > 0 && bb.n == bb.i);
+        CHECK(rc == 0);
+        CHECK(bb.n > 0 && bb.n == bb.i);
         bb.n = 2;
         bb.i = 0;
         rc = mqtt_serialize(&pkt, &bb);
-        assert(rc == -1);
+        CHECK(rc == -1);
         mqtt_packet_cleanup(&pkt);
     }
 
@@ -2211,15 +2218,15 @@ test_mqtt_hardening() {
         mqtt_packet_init(&pkt, MQTT_VERSION_4, MQTT_AUTH);
         rc = mqtt_serialize(&pkt, &bs);
         mqtt_packet_cleanup(&pkt);
-        assert(rc == -1);
+        CHECK(rc == -1);
     }
 
     /* fixed packet macros keep the wire format. */
     {
         static const uint8_t pubrel[] = MQTT_P_PUBREL_RC(0x1234, 0x00);
         static const uint8_t pubcomp[] = MQTT_P_PUBCOMP_RC(0x1234, 0x00);
-        assert(pubrel[0] == 0x62 && pubrel[1] == 0x04);
-        assert(pubcomp[0] == 0x70 && pubcomp[1] == 0x04);
+        CHECK(pubrel[0] == 0x62 && pubrel[1] == 0x04);
+        CHECK(pubcomp[0] == 0x70 && pubcomp[1] == 0x04);
     }
 
     /* encapsulated sn packet round-trip. */
@@ -2232,16 +2239,16 @@ test_mqtt_hardening() {
         mqtt_str_from(&sn.v.encapsulated.message, "wmsg");
         rc = mqtt_sn_serialize(&sn, &bs);
         mqtt_sn_packet_cleanup(&sn);
-        assert(rc == 0);
+        CHECK(rc == 0);
         mqtt_str_set(&bp, &bs);
         bp.i = 0;
         mqtt_sn_parser_init(&snp);
         rc = mqtt_sn_parse(&snp, &bp, &sn);
-        assert(rc == 1);
-        assert(sn.type == MQTT_SN_ENCAPSULATED);
-        assert(sn.v.encapsulated.ctrl == MQTT_ENC_RADIUS);
-        assert(sn.v.encapsulated.radius == 2);
-        assert(!mqtt_str_strcmp(&sn.v.encapsulated.message, "wmsg"));
+        CHECK(rc == 1);
+        CHECK(sn.type == MQTT_SN_ENCAPSULATED);
+        CHECK(sn.v.encapsulated.ctrl == MQTT_ENC_RADIUS);
+        CHECK(sn.v.encapsulated.radius == 2);
+        CHECK(!mqtt_str_strcmp(&sn.v.encapsulated.message, "wmsg"));
         mqtt_sn_packet_cleanup(&sn);
         mqtt_sn_parser_cleanup(&snp);
         mqtt_str_free(&bs);
