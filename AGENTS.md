@@ -29,7 +29,7 @@ cmake -B build && cmake --build build
 | `mqtt_test` | offline parser fuzz: 2x10k random MQTT + MQTT-SN parses + mempool leak check. No network, safe to run anytime |
 | `mqtt_cli_test` | needs a running broker on 127.0.0.1:1883; connect→sub→pub→unsub→disconnect |
 | `mqtt_sn_cli_test` | needs a running `mqtt_sn_gateway`; full MQTT-SN advertise/search/gwinfo flow |
-| `mqtt_broker_test` | end-to-end broker suite: spawns 6 broker processes on unique ports (base = `18831 + pid % 2000`, or argv[1]); 56 tests covering v5 connack/caps, auth, session takeover/expiry, qos0-2, props passthrough, retained/RAP, wildcards, shared subs, topic alias (in/out/range/unknown), wills (immediate/delayed/cancelled/retained), offline queues, rate limit, $SYS, websocket, persistence, and v5 edge cases (client-id length 0x85, assigned client id, bad protocol name/level, invalid publish topic 0x90, duplicate QoS2 publish, QoS1 dup retransmission, max sub id, PUBREL/PUBACK unknown id 0x92, invalid unsubscribe filter 0x8F, DISCONNECT session expiry, retained message expiry). `BT_LOG=debug` sets broker log level. Exits non-zero on any failed check |
+| `mqtt_broker_test` | end-to-end broker suite: spawns 6 broker processes on unique ports (base = `18831 + pid % 2000`, or argv[1]); 63 tests covering v5 connack/caps, auth, session takeover/expiry, qos0-2, props passthrough, retained/RAP, wildcards, shared subs, topic alias (in/out/out-disabled/range/unknown), wills (immediate/delayed/cancelled/retained), offline queues, rate limit, $SYS, websocket, persistence, and v5 edge cases (client-id length 0x85, assigned client id, bad protocol name/level, invalid publish topic 0x90, duplicate QoS2 publish, QoS1 dup retransmission, max sub id, PUBREL/PUBACK unknown id 0x92, invalid unsubscribe filter 0x8F, DISCONNECT session expiry, retained message expiry). `BT_LOG=debug` sets broker log level. Exits non-zero on any failed check |
 
 ### broker.ini sections
 
@@ -68,7 +68,11 @@ Broker behavior notes:
   subscriptions (round-robin across group members); CONNACK advertises server
   capabilities (receive maximum, max packet size, max QoS, retained/wildcard/
   shared/sub-id available, topic alias max).
- - v5 error handling: an out-of-range or unknown incoming topic alias answers
+  - v5 topic alias direction: the client's CONNECT `Topic Alias Maximum` limits
+    what the broker SENDS to that client (0/absent = no outgoing aliases, full
+    topic names always); an incoming alias above the server's CONNACK-advertised
+    maximum (10) is the protocol error.
+  - v5 error handling: an out-of-range or unknown incoming topic alias answers
    PUBACK 0x94 (QoS>0) and closes the connection; a PUBLISH whose topic name
    contains a wildcard answers PUBACK 0x90 (QoS>0) and closes the connection
    (the parser does NOT reject the packet, so the handler can reply); an

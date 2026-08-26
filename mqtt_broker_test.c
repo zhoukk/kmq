@@ -2086,7 +2086,8 @@ test_v5_alias_out(void) {
 
     test_begin("v5 outgoing topic alias: broker aliases repeated topics");
     CHECK(cli_open(&sub, g_port_main, MQTT_VERSION_5) == 0, "sub open");
-    CHECK(cli_connect(&sub, "ao-sub", 1, 60, 0, 0, 0, 0, 0, 0, 0, MQTT_QOS_0, 0, &ca) == 0, "sub connack");
+    /* subscriber advertises Topic Alias Maximum = 10: the broker may alias */
+    CHECK(cli_connect(&sub, "ao-sub", 1, 60, 0, 0, 0, 0, 10, 0, 0, MQTT_QOS_0, 0, &ca) == 0, "sub connack");
     mqtt_packet_cleanup(&ca);
     CHECK(cli_subscribe(&sub, 1, f, o, 0, 0) == 0, "subscribe");
     CHECK(cli_wait(&sub, MQTT_SUBACK, 3000, &sa) == 0, "suback");
@@ -2125,15 +2126,54 @@ test_v5_alias_out(void) {
 }
 
 static void
+test_v5_alias_out_disabled(void) {
+    cli_t sub, pub;
+    mqtt_packet_t ca, sa, pk1, pk2;
+    const char *f[] = {"ad/t"};
+    uint8_t o[] = {0};
+
+    test_begin("v5 client without topic alias max: broker sends full topics, no aliases");
+    CHECK(cli_open(&sub, g_port_main, MQTT_VERSION_5) == 0, "sub open");
+    /* subscriber does NOT advertise Topic Alias Maximum (default 0):
+     * the broker MUST NOT use topic aliases ([MQTT-3.3.2-8]) */
+    CHECK(cli_connect(&sub, "ad-sub", 1, 60, 0, 0, 0, 0, 0, 0, 0, MQTT_QOS_0, 0, &ca) == 0, "sub connack");
+    mqtt_packet_cleanup(&ca);
+    CHECK(cli_subscribe(&sub, 1, f, o, 0, 0) == 0, "subscribe");
+    CHECK(cli_wait(&sub, MQTT_SUBACK, 3000, &sa) == 0, "suback");
+    mqtt_packet_cleanup(&sa);
+
+    CHECK(cli_open(&pub, g_port_main, MQTT_VERSION_5) == 0, "pub open");
+    CHECK(cli_connect(&pub, "ad-pub", 1, 60, 0, 0, 0, 0, 0, 0, 0, MQTT_QOS_0, 0, &ca) == 0, "pub connack");
+    mqtt_packet_cleanup(&ca);
+    CHECK(cli_publish(&pub, "ad/t", MQTT_QOS_0, 0, "ad-1", 0) == 0, "publish 1");
+    CHECK(cli_publish(&pub, "ad/t", MQTT_QOS_0, 0, "ad-2", 0) == 0, "publish 2");
+
+    CHECK(cli_wait(&sub, MQTT_PUBLISH, 3000, &pk1) == 0, "received 1");
+    CHECK_EQ_INT(pk1.v.publish.topic_name.n, (size_t)strlen("ad/t"), "first has full topic");
+    CHECK(mqtt_properties_find(&pk1.v.publish.v5.properties, MQTT_PROPERTY_TOPIC_ALIAS) == 0, "no alias property 1");
+    CHECK(strcmp(cli_publish_topic(&sub, &pk1), "ad/t") == 0, "topic 1");
+
+    CHECK(cli_wait(&sub, MQTT_PUBLISH, 3000, &pk2) == 0, "received 2");
+    CHECK_EQ_INT(pk2.v.publish.topic_name.n, (size_t)strlen("ad/t"), "second has full topic");
+    CHECK(mqtt_properties_find(&pk2.v.publish.v5.properties, MQTT_PROPERTY_TOPIC_ALIAS) == 0, "no alias property 2");
+    CHECK(strcmp(cli_publish_topic(&sub, &pk2), "ad/t") == 0, "topic 2");
+    mqtt_packet_cleanup(&pk1);
+    mqtt_packet_cleanup(&pk2);
+    cli_close(&sub);
+    cli_close(&pub);
+    test_end();
+}
+
+static void
 test_v5_alias_range(void) {
     cli_t pub, sub;
     mqtt_packet_t ca, sa, pk, ack;
-    uint16_t alias = 2;
+    uint16_t alias = 11; /* the server advertises Topic Alias Maximum = 10 */
     uint16_t id = 0;
     const char *f[] = {"ar/t"};
     uint8_t o[] = {0};
 
-    test_begin("v5 topic alias above maximum -> PUBACK 0x94 + disconnect");
+    test_begin("v5 topic alias above the server maximum -> PUBACK 0x94 + disconnect");
     CHECK(cli_open(&sub, g_port_main, MQTT_VERSION_5) == 0, "sub open");
     CHECK(cli_connect(&sub, "ar-sub", 1, 60, 0, 0, 0, 0, 0, 0, 0, MQTT_QOS_0, 0, &ca) == 0, "sub connack");
     mqtt_packet_cleanup(&ca);
@@ -2142,13 +2182,14 @@ test_v5_alias_range(void) {
     mqtt_packet_cleanup(&sa);
 
     CHECK(cli_open(&pub, g_port_main, MQTT_VERSION_5) == 0, "pub open");
-    /* publisher advertises Topic Alias Maximum = 1, then uses alias 2 */
-    CHECK(cli_connect(&pub, "ar-pub", 1, 60, 0, 0, 0, 0, 1, 0, 0, MQTT_QOS_0, 0, &ca) == 0, "pub connack");
+    CHECK(cli_connect(&pub, "ar-pub", 1, 60, 0, 0, 0, 0, 0, 0, 0, MQTT_QOS_0, 0, &ca) == 0, "pub connack");
     mqtt_packet_cleanup(&ca);
 
     {
         mqtt_packet_t pubpkt;
 
+        /* the server advertises Topic Alias Maximum = 10 in CONNACK:
+         * alias 11 is above it ([MQTT-3.3.2-10] protocol error) */
         mqtt_packet_init(&pubpkt, MQTT_VERSION_5, MQTT_PUBLISH);
         pubpkt.f.flags = MQTT_FH_BUILD(MQTT_PUBLISH, 0, MQTT_QOS_1, 0);
         pubpkt.v.publish.packet_id = cli_next_id(&pub);
@@ -3170,6 +3211,7 @@ main(int argc, char *argv[]) {
     test_v5_unsub_invalid_filter();
     test_v5_alias_in();
     test_v5_alias_out();
+    test_v5_alias_out_disabled();
     test_v5_alias_range();
     test_v5_alias_unknown();
 

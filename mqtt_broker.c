@@ -2868,9 +2868,12 @@ mqtt_on_connect(mqtt_broker_t *b, mqtt_client_t *c, mqtt_packet_t *req, mqtt_pac
     c->keep_alive = req->v.connect.keep_alive;
     mqtt_str_copy(&c->username, &req->p.connect.username);
 
-    /* v5: read client capabilities from CONNECT properties */
-    s->in_alias_max = 0;
-    s->out_alias_max = b->server_alias_max;
+    /* v5: read client capabilities from CONNECT properties.
+     * in_alias_max  = what we accept from the client (what we advertise in CONNACK)
+     * out_alias_max = what we may send to the client (what the client advertises,
+     *                 0 = no topic aliases, [MQTT-3.3.2-8]) */
+    s->in_alias_max = b->server_alias_max;
+    s->out_alias_max = 0;
     s->receive_max = b->server_receive_max;
     s->session_expiry = 0;
     if (req->ver == MQTT_VERSION_5) {
@@ -2886,7 +2889,7 @@ mqtt_on_connect(mqtt_broker_t *b, mqtt_client_t *c, mqtt_packet_t *req, mqtt_pac
         }
         prop = mqtt_properties_find(&req->v.connect.v5.properties, MQTT_PROPERTY_TOPIC_ALIAS_MAXIMUM);
         if (prop) {
-            s->in_alias_max = prop->b2;
+            s->out_alias_max = prop->b2;
         }
         mqtt_session_alias_clear(s);
     }
@@ -2931,7 +2934,7 @@ mqtt_on_connect(mqtt_broker_t *b, mqtt_client_t *c, mqtt_packet_t *req, mqtt_pac
         mqtt_properties_add(&res->v.connack.v5.properties, MQTT_PROPERTY_RECEIVE_MAXIMUM, &s->receive_max, NULL);
         mqtt_properties_add(&res->v.connack.v5.properties, MQTT_PROPERTY_MAXIMUM_QOS, &b->server_max_qos, NULL);
         mqtt_properties_add(&res->v.connack.v5.properties, MQTT_PROPERTY_RETAIN_AVAILABLE, &b->server_retain_available, NULL);
-        mqtt_properties_add(&res->v.connack.v5.properties, MQTT_PROPERTY_TOPIC_ALIAS_MAXIMUM, &s->out_alias_max, NULL);
+        mqtt_properties_add(&res->v.connack.v5.properties, MQTT_PROPERTY_TOPIC_ALIAS_MAXIMUM, &b->server_alias_max, NULL);
         mqtt_properties_add(&res->v.connack.v5.properties, MQTT_PROPERTY_WILDCARD_SUBSCRIPTION_AVAILABLE,
                             &b->server_wildcard_available, NULL);
         mqtt_properties_add(&res->v.connack.v5.properties, MQTT_PROPERTY_SUBSCRIPTION_IDENTIFIERS_AVAILABLE,
