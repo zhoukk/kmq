@@ -815,8 +815,10 @@ wshttp_feed(wshttp_t *wh, websocket_binary_t *b) {
                 return rc;
             }
             if (f.opcode == WS_OPCODE_PING) {
-                websocket_binary_t dummy = {0, 0};
-                wshttp_write(wh, WS_OPCODE_PONG, &dummy);
+                /* RFC6455 5.5.2: the pong payload echoes the ping payload */
+                wshttp_write(wh, WS_OPCODE_PONG, &f.payload);
+                if (f.payload.data && f.payload.length)
+                    free(f.payload.data);
                 return 0;
             }
             if (f.opcode == WS_OPCODE_CLOSE) {
