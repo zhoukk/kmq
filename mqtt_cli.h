@@ -757,6 +757,8 @@ network_tcp_send(void *net, const void *data, size_t size) {
     ssize_t nsend, totlen = 0;
     char *buf = (char *)data;
 
+    if (!net)
+        return -1;
     fd = ((network_tcp_t *)net)->fd;
     while ((size_t)totlen != size) {
         nsend = send(fd, buf, size - totlen, 0);
@@ -778,6 +780,8 @@ network_tcp_recv(void *net, void *data, size_t size) {
     int fd;
     ssize_t nrecv;
 
+    if (!net)
+        return -1;
     fd = ((network_tcp_t *)net)->fd;
     nrecv = recv(fd, data, size, 0);
     if (nrecv == 0)
