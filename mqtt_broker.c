@@ -2384,9 +2384,7 @@ mqtt_client_id_generate(mqtt_broker_t *b, mqtt_str_t *client_id) {
 
     client_id->s = (char *)MQTT_MALLOC(SNOWFLAKE_ID_LEN + 1);
     id = snowflake_id(&b->snowflake);
-    sprintf(client_id->s, "%ld", id);
-    client_id->s[SNOWFLAKE_ID_LEN] = '\0';
-    client_id->n = SNOWFLAKE_ID_LEN;
+    client_id->n = (size_t)sprintf(client_id->s, "%ld", id);
 }
 
 /* does topic filter F match concrete topic T? (+ = one level, # = rest) */
@@ -2841,7 +2839,15 @@ mqtt_on_connect(mqtt_broker_t *b, mqtt_client_t *c, mqtt_packet_t *req, mqtt_pac
             }
         }
     } else {
-        mqtt_client_id_generate(b, &client_id);
+        /* a generated id must never collide with an existing session: map_push
+         * silently drops a duplicate key, leaving an orphaned session whose
+         * later erase corrupts the whole session map */
+        for (;;) {
+            mqtt_client_id_generate(b, &client_id);
+            if (!mqtt_broker_find_session(b, &client_id))
+                break;
+            mqtt_str_free(&client_id);
+        }
     }
 
     if (!s) {

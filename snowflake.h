@@ -34,7 +34,8 @@
 #define SNOWFLAKE_WORKERID_BITS 10
 #define SNOWFLAKE_SEQUENCE_BITS 8
 
-#define SNOWFLAKE_ID_LEN 18
+/* max decimal digits of a (signed) long: 19; buffer must be LEN+1 */
+#define SNOWFLAKE_ID_LEN 19
 
 typedef struct {
     long worker_id;
