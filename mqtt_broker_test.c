@@ -317,10 +317,13 @@ cli_send_pkt(cli_t *cli, mqtt_packet_t *pkt) {
 
     rc = mqtt_serialize(pkt, &b);
     if (rc) {
+        mqtt_packet_cleanup(pkt);
         return -1;
     }
     rc = cli_send_raw(cli, b.s, b.n);
     mqtt_str_free(&b);
+    /* release the packet's arrays/properties; the caller never needs it after send */
+    mqtt_packet_cleanup(pkt);
     return rc;
 }
 
@@ -1268,16 +1271,6 @@ test_v5_qos0(void) {
     CHECK(cli_publish(&pub, "q0/t", MQTT_QOS_0, 0, "hello-q0", 0) == 0, "publish");
 
     CHECK(cli_wait(&sub, MQTT_PUBLISH, 3000, &pk) == 0, "received");
-    {
-        mqtt_property_t *pp;
-        fprintf(stderr, "  [dbg] topic=[%.*s] n=%zu payload=[%.*s]\n",
-                (int)pk.v.publish.topic_name.n, pk.v.publish.topic_name.s ? pk.v.publish.topic_name.s : "",
-                pk.v.publish.topic_name.n, (int)pk.p.publish.message.n,
-                pk.p.publish.message.s ? pk.p.publish.message.s : "");
-        for (pp = pk.v.publish.v5.properties.head; pp; pp = pp->next) {
-            fprintf(stderr, "  [dbg] prop code=%d b2=%u\n", (int)pp->code, pp->b2);
-        }
-    }
     CHECK(strcmp(cli_publish_topic(&sub, &pk), "q0/t") == 0, "topic");
     CHECK_EQ_INT(pk.p.publish.message.n, strlen("hello-q0"), "payload len");
     CHECK(payload_eq(&pk, "hello-q0"), "payload");
