@@ -1039,13 +1039,13 @@ test_v5_session_present(void) {
 
     test_begin("v5 persistent session: session present on reconnect");
     CHECK(cli_open(&a, g_port_main, MQTT_VERSION_5) == 0, "a connect");
-    CHECK(cli_connect(&a, "sess-a", 0, 60, 0, 0, 0, 0, 0, 0, 0, MQTT_QOS_0, 0, &ca) == 0, "a connack");
+    CHECK(cli_connect(&a, "sess-a", 0, 60, 0, 0, 300, 0, 0, 0, 0, MQTT_QOS_0, 0, &ca) == 0, "a connack");
     CHECK_EQ_INT(ca.v.connack.v5.acknowledge_flags.flags & MQTT_ACK_SESSION_PRESENT, 0, "first: no session");
     mqtt_packet_cleanup(&ca);
-    cli_close(&a); /* abnormal close, session kept */
+    cli_close(&a); /* abnormal close, session kept (expiry 300s) */
 
     CHECK(cli_open(&b, g_port_main, MQTT_VERSION_5) == 0, "b connect");
-    CHECK(cli_connect(&b, "sess-a", 0, 60, 0, 0, 0, 0, 0, 0, 0, MQTT_QOS_0, 0, &ca) == 0, "b connack");
+    CHECK(cli_connect(&b, "sess-a", 0, 60, 0, 0, 300, 0, 0, 0, 0, MQTT_QOS_0, 0, &ca) == 0, "b connack");
     CHECK_EQ_INT(ca.v.connack.v5.acknowledge_flags.flags & MQTT_ACK_SESSION_PRESENT, 1, "reconnect: session present");
     mqtt_packet_cleanup(&ca);
     cli_close(&b);
@@ -2291,8 +2291,8 @@ test_will_delayed(void) {
     mqtt_packet_cleanup(&sa);
 
     CHECK(cli_open(&dead, g_port_main, MQTT_VERSION_5) == 0, "dead open");
-    /* persistent session + will delay 2s */
-    CHECK(cli_connect(&dead, "wd-dead", 0, 60, 0, 0, 0, 0, 0, "wd/t", "delayed-will", MQTT_QOS_1, 2, &ca) == 0,
+    /* persistent session (expiry 300s) + will delay 2s */
+    CHECK(cli_connect(&dead, "wd-dead", 0, 60, 0, 0, 300, 0, 0, "wd/t", "delayed-will", MQTT_QOS_1, 2, &ca) == 0,
           "dead connack");
     mqtt_packet_cleanup(&ca);
     cli_close(&dead); /* abnormal close -> delayed will */
@@ -2344,7 +2344,7 @@ test_offline_queue(void) {
 
     test_begin("v5 persistent session: offline queue delivered on reconnect");
     CHECK(cli_open(&a, g_port_main, MQTT_VERSION_5) == 0, "a open");
-    CHECK(cli_connect(&a, "off-a", 0, 60, 0, 0, 0, 0, 0, 0, 0, MQTT_QOS_0, 0, &ca) == 0, "a connack");
+    CHECK(cli_connect(&a, "off-a", 0, 60, 0, 0, 300, 0, 0, 0, 0, MQTT_QOS_0, 0, &ca) == 0, "a connack");
     mqtt_packet_cleanup(&ca);
     CHECK(cli_subscribe(&a, 1, f, o, 0, 0) == 0, "a subscribe");
     CHECK(cli_wait(&a, MQTT_SUBACK, 3000, &sa) == 0, "a suback");
@@ -2367,7 +2367,7 @@ test_offline_queue(void) {
     cli_close(&b);
 
     CHECK(cli_open(&a, g_port_main, MQTT_VERSION_5) == 0, "a reopen");
-    CHECK(cli_connect(&a, "off-a", 0, 60, 0, 0, 0, 0, 0, 0, 0, MQTT_QOS_0, 0, &ca) == 0, "a connack");
+    CHECK(cli_connect(&a, "off-a", 0, 60, 0, 0, 300, 0, 0, 0, 0, MQTT_QOS_0, 0, &ca) == 0, "a connack");
     CHECK_EQ_INT(ca.v.connack.v5.acknowledge_flags.flags & MQTT_ACK_SESSION_PRESENT, 1, "session present");
     mqtt_packet_cleanup(&ca);
     for (;;) {
@@ -2619,7 +2619,7 @@ test_persistence(void) {
     test_begin("persistence: retained + offline queue survive a restart");
     /* a subscribes, then goes offline */
     CHECK(cli_open(&a, g_port_persist, MQTT_VERSION_5) == 0, "a open");
-    CHECK(cli_connect(&a, "p-a", 0, 60, 0, 0, 0, 0, 0, 0, 0, MQTT_QOS_0, 0, &ca) == 0, "a connack");
+    CHECK(cli_connect(&a, "p-a", 0, 60, 0, 0, 300, 0, 0, 0, 0, MQTT_QOS_0, 0, &ca) == 0, "a connack");
     mqtt_packet_cleanup(&ca);
     CHECK(cli_subscribe(&a, 1, f, o, 0, 0) == 0, "a subscribe");
     CHECK(cli_wait(&a, MQTT_SUBACK, 3000, &sa) == 0, "a suback");
@@ -2658,7 +2658,7 @@ test_persistence(void) {
 
     /* a reconnects: offline message is redelivered */
     CHECK(cli_open(&a, g_port_persist, MQTT_VERSION_5) == 0, "a reopen");
-    CHECK(cli_connect(&a, "p-a", 0, 60, 0, 0, 0, 0, 0, 0, 0, MQTT_QOS_0, 0, &ca) == 0, "a connack");
+    CHECK(cli_connect(&a, "p-a", 0, 60, 0, 0, 300, 0, 0, 0, 0, MQTT_QOS_0, 0, &ca) == 0, "a connack");
     CHECK_EQ_INT(ca.v.connack.v5.acknowledge_flags.flags & MQTT_ACK_SESSION_PRESENT, 1, "session present");
     mqtt_packet_cleanup(&ca);
     for (;;) {

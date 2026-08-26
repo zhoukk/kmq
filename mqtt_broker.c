@@ -3677,7 +3677,11 @@ mqtt_client_destroy(mqtt_client_t *c) {
 
     s = c->s;
     if (s) {
-        if (c->clean_session) {
+        /* v5: a session whose expiry interval is 0 (the default when the
+         * property is absent) ends when the network connection ends,
+         * [MQTT-3.1.2-24/25]; only persistent sessions (expiry > 0, or v3.x
+         * clean_session=0) survive the disconnect */
+        if (c->clean_session || (c->ver == MQTT_VERSION_5 && s->session_expiry == 0)) {
             mqtt_broker_remove_session(b, s);
             mqtt_session_destroy(b, s);
         } else {
