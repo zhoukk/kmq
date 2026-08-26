@@ -4955,6 +4955,50 @@ mqtt_broker_run(mqtt_broker_t *b) {
     return uv_run(b->loop, UV_RUN_DEFAULT);
 }
 
+/*
+ * Free a broker that only got as far as config parsing: listener_m,
+ * account_q and acl_q are the only live structures, and no uv handle
+ * has been created, so a full mqtt_broker_destroy would deref zeroed
+ * state.
+ */
+static void
+_broker_free_partial(mqtt_broker_t *b) {
+    queue_t *qnode;
+    map_node_t *mnode, *next_mnode;
+
+    while (!queue_empty(&b->account_q)) {
+        qnode = queue_head(&b->account_q);
+        queue_remove(qnode);
+        mqtt_account_t *acc = queue_data(qnode, mqtt_account_t, node);
+        mqtt_str_free(&acc->client_id);
+        mqtt_str_free(&acc->username);
+        mqtt_str_free(&acc->password);
+        free(acc);
+    }
+    while (!queue_empty(&b->acl_q)) {
+        qnode = queue_head(&b->acl_q);
+        queue_remove(qnode);
+        mqtt_acl_rule_t *rule = queue_data(qnode, mqtt_acl_rule_t, node);
+        mqtt_str_free(&rule->username);
+        mqtt_str_free(&rule->topic);
+        free(rule);
+    }
+    map_foreach_safe(mnode, next_mnode, &b->listener_m) {
+        mqtt_broker_listener_t *ln = map_data(mnode, mqtt_broker_listener_t, node);
+        free(ln->id);
+        free(ln->host);
+        free(ln->cert_file);
+        free(ln->key_file);
+        free(ln->auth_type);
+        free(ln->auth_api);
+        map_erase(&b->listener_m, mnode);
+        free(ln);
+    }
+    free(b->host);
+    free(b->persist_file);
+    free(b);
+}
+
 int
 main(int argc, char *argv[]) {
     uv_loop_t *loop;
@@ -4981,7 +5025,7 @@ main(int argc, char *argv[]) {
 
     if (argc > 1 && ini_parse(argv[1], _broker_config, b)) {
         LOG_E("config file %s parse error", argv[1]);
-        mqtt_broker_destroy(b);
+        _broker_free_partial(b);
         return EXIT_FAILURE;
     }
 
