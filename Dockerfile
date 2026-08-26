@@ -5,29 +5,27 @@ WORKDIR /app
 ADD . .
 
 RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories \
-    && apk add gcc g++ make autoconf automake libtool libuv-dev openssl-dev \
-    && ./autogen.sh && ./configure && make
+    && apk add --no-cache build-base cmake libuv-dev openssl-dev \
+    && cmake -B build && cmake --build build -j
 
 FROM alpine
 
 RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories \
-    && apk add libuv openssl
+    && apk add --no-cache libuv openssl
 
-COPY --from=builder /app/mqtt_broker .
-COPY --from=builder /app/mqtt_proxy .
-COPY --from=builder /app/mqtt_sn_gateway .
-COPY --from=builder /app/mqtt_pub .
-COPY --from=builder /app/mqtt_sub .
-COPY --from=builder /app/mqtt_sn_pub .
-COPY --from=builder /app/mqtt_sn_sub .
-COPY --from=builder /app/mqtt_sn_cli_test .
-COPY --from=builder /app/mqtt_cli_test .
-COPY --from=builder /app/mqtt_test .
+COPY --from=builder /app/build/mqtt_broker .
+COPY --from=builder /app/build/mqtt_sn_gateway .
+COPY --from=builder /app/build/mqtt_pub .
+COPY --from=builder /app/build/mqtt_sub .
+COPY --from=builder /app/build/mqtt_sn_pub .
+COPY --from=builder /app/build/mqtt_sn_sub .
+COPY --from=builder /app/build/mqtt_sn_cli_test .
+COPY --from=builder /app/build/mqtt_cli_test .
+COPY --from=builder /app/build/mqtt_test .
+COPY --from=builder /app/broker.ini .
 
 EXPOSE 1883
-EXPOSE 8883
-EXPOSE 8083
-EXPOSE 8084
+EXPOSE 1884
 
-CMD ["app/broker.ini"]
+CMD ["/broker.ini"]
 ENTRYPOINT ["/mqtt_broker"]
