@@ -91,6 +91,7 @@ typedef struct mqtt_mempool_block_s {
     size_t size;
     size_t used;
     int slab_index;
+    char pad[4]; /* keep data 16-byte aligned (malloc guarantees >= 8) */
     char data[1];
 } mqtt_mempool_block_t;
 
