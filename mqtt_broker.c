@@ -2748,11 +2748,13 @@ mqtt_on_connect(mqtt_broker_t *b, mqtt_client_t *c, mqtt_packet_t *req, mqtt_pac
     mqtt_str_t client_id = MQTT_STR_INITIALIZER;
     mqtt_session_t *s;
 
-    LOG_I("[%.*s] received CONNECT (id: %.*s, v: %s, c: %" PRIu8 ", k: %" PRIu16 ", u: %.*s, p: %.*s)",
+    /* never log the password, only whether one was provided */
+    LOG_I("[%.*s] received CONNECT (id: %.*s, v: %s, c: %" PRIu8 ", k: %" PRIu16 ", u: %.*s, p: %s)",
           MQTT_STR_PRINT(req->p.connect.client_id), MQTT_STR_PRINT(req->p.connect.client_id),
           mqtt_version_name(req->v.connect.protocol_version),
           (req->v.connect.connect_flags & MQTT_CF_CLEAN_SESSION) ? 1 : 0,
-          req->v.connect.keep_alive, MQTT_STR_PRINT(req->p.connect.username), MQTT_STR_PRINT(req->p.connect.password));
+          req->v.connect.keep_alive, MQTT_STR_PRINT(req->p.connect.username),
+          (req->v.connect.connect_flags & MQTT_CF_PASSWORD) ? "yes" : "no");
     if (req->v.connect.connect_flags & MQTT_CF_WILL_FLAG) {
         LOG_I("\tLWT (retain: %d, topic: %.*s, qos: %d, message: %.*s)",
               (req->v.connect.connect_flags & MQTT_CF_WILL_RETAIN) ? 1 : 0,
