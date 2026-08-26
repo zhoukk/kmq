@@ -1399,6 +1399,226 @@ test_v5_qos_downgrade(void) {
 }
 
 static void
+test_v5_multi_filter_subscribe(void) {
+    cli_t sub, pub;
+    mqtt_packet_t ca, sa, pk, ack;
+    uint16_t id = 0;
+    const char *f[] = {"mf/a", "mf/b", "mf/c"};
+    uint8_t o[] = {MQTT_QOS_0, MQTT_QOS_1, MQTT_QOS_2};
+
+    test_begin("v5 single SUBSCRIBE with 3 filters at qos0/1/2, delivered at the granted qos");
+    CHECK(cli_open(&sub, g_port_main, MQTT_VERSION_5) == 0, "sub open");
+    CHECK(cli_connect(&sub, "mf-sub", 1, 60, 0, 0, 0, 0, 0, 0, 0, MQTT_QOS_0, 0, &ca) == 0, "sub connack");
+    mqtt_packet_cleanup(&ca);
+    CHECK(cli_subscribe(&sub, 3, f, o, 0, 0) == 0, "subscribe 3 filters");
+    CHECK(cli_wait(&sub, MQTT_SUBACK, 3000, &sa) == 0, "suback");
+    CHECK_EQ_INT(suback_rc5(&sa, 0), MQTT_RC_GRANTED_QOS_0, "granted qos0");
+    CHECK_EQ_INT(suback_rc5(&sa, 1), MQTT_RC_GRANTED_QOS_1, "granted qos1");
+    CHECK_EQ_INT(suback_rc5(&sa, 2), MQTT_RC_GRANTED_QOS_2, "granted qos2");
+    mqtt_packet_cleanup(&sa);
+
+    CHECK(cli_open(&pub, g_port_main, MQTT_VERSION_5) == 0, "pub open");
+    CHECK(cli_connect(&pub, "mf-pub", 1, 60, 0, 0, 0, 0, 0, 0, 0, MQTT_QOS_0, 0, &ca) == 0, "pub connack");
+    mqtt_packet_cleanup(&ca);
+
+    /* filter 0: qos0 */
+    CHECK(cli_publish(&pub, "mf/a", MQTT_QOS_0, 0, "msg-a", 0) == 0, "publish a");
+    CHECK(cli_wait(&sub, MQTT_PUBLISH, 3000, &pk) == 0, "received a");
+    CHECK(strcmp(cli_publish_topic(&sub, &pk), "mf/a") == 0, "topic a");
+    CHECK(payload_eq(&pk, "msg-a"), "payload a");
+    CHECK_EQ_INT(MQTT_FH_QOS(pk.f.flags), 0, "qos a");
+    mqtt_packet_cleanup(&pk);
+
+    /* filter 1: qos1 (the subscriber auto-answers the PUBACK) */
+    CHECK(cli_publish(&pub, "mf/b", MQTT_QOS_1, 0, "msg-b", &id) == 0, "publish b");
+    CHECK(cli_wait(&pub, MQTT_PUBACK, 3000, &ack) == 0, "puback b");
+    CHECK_EQ_INT(ack.v.puback.v5.reason_code, MQTT_RC_SUCCESS, "puback b rc");
+    mqtt_packet_cleanup(&ack);
+    CHECK(cli_wait(&sub, MQTT_PUBLISH, 3000, &pk) == 0, "received b");
+    CHECK(strcmp(cli_publish_topic(&sub, &pk), "mf/b") == 0, "topic b");
+    CHECK(payload_eq(&pk, "msg-b"), "payload b");
+    CHECK_EQ_INT(MQTT_FH_QOS(pk.f.flags), 1, "qos b");
+    mqtt_packet_cleanup(&pk);
+
+    /* filter 2: qos2 (the subscriber auto-answers PUBREC/PUBREL) */
+    CHECK(cli_publish(&pub, "mf/c", MQTT_QOS_2, 0, "msg-c", &id) == 0, "publish c");
+    CHECK(cli_wait(&pub, MQTT_PUBREC, 3000, &pk) == 0, "pubrec c");
+    mqtt_packet_cleanup(&pk);
+    CHECK(cli_wait(&pub, MQTT_PUBCOMP, 3000, &pk) == 0, "pubcomp c");
+    mqtt_packet_cleanup(&pk);
+    CHECK(cli_wait(&sub, MQTT_PUBLISH, 3000, &pk) == 0, "received c");
+    CHECK(strcmp(cli_publish_topic(&sub, &pk), "mf/c") == 0, "topic c");
+    CHECK(payload_eq(&pk, "msg-c"), "payload c");
+    CHECK_EQ_INT(MQTT_FH_QOS(pk.f.flags), 2, "qos c");
+    mqtt_packet_cleanup(&pk);
+    cli_close(&sub);
+    cli_close(&pub);
+    test_end();
+}
+
+static void
+test_v5_resubscribe_update(void) {
+    cli_t sub, pub;
+    mqtt_packet_t ca, sa, pk, ack;
+    uint16_t id = 0;
+    const char *f[] = {"rs/t"};
+    uint8_t o0[] = {MQTT_QOS_0};
+    uint8_t o1[] = {MQTT_QOS_1};
+
+    test_begin("v5 re-subscribe to the same filter raises the granted qos");
+    CHECK(cli_open(&sub, g_port_main, MQTT_VERSION_5) == 0, "sub open");
+    CHECK(cli_connect(&sub, "rs-sub", 1, 60, 0, 0, 0, 0, 0, 0, 0, MQTT_QOS_0, 0, &ca) == 0, "sub connack");
+    mqtt_packet_cleanup(&ca);
+    CHECK(cli_subscribe(&sub, 1, f, o0, 0, 0) == 0, "subscribe qos0");
+    CHECK(cli_wait(&sub, MQTT_SUBACK, 3000, &sa) == 0, "suback");
+    CHECK_EQ_INT(suback_rc5(&sa, 0), MQTT_RC_GRANTED_QOS_0, "granted qos0");
+    mqtt_packet_cleanup(&sa);
+
+    CHECK(cli_subscribe(&sub, 1, f, o1, 0, 0) == 0, "re-subscribe qos1");
+    CHECK(cli_wait(&sub, MQTT_SUBACK, 3000, &sa) == 0, "suback");
+    CHECK_EQ_INT(suback_rc5(&sa, 0), MQTT_RC_GRANTED_QOS_1, "granted qos1");
+    mqtt_packet_cleanup(&sa);
+
+    CHECK(cli_open(&pub, g_port_main, MQTT_VERSION_5) == 0, "pub open");
+    CHECK(cli_connect(&pub, "rs-pub", 1, 60, 0, 0, 0, 0, 0, 0, 0, MQTT_QOS_0, 0, &ca) == 0, "pub connack");
+    mqtt_packet_cleanup(&ca);
+    CHECK(cli_publish(&pub, "rs/t", MQTT_QOS_1, 0, "updated", &id) == 0, "publish qos1");
+    CHECK(cli_wait(&pub, MQTT_PUBACK, 3000, &ack) == 0, "puback");
+    mqtt_packet_cleanup(&ack);
+    CHECK(cli_wait(&sub, MQTT_PUBLISH, 3000, &pk) == 0, "received");
+    CHECK(payload_eq(&pk, "updated"), "payload");
+    CHECK_EQ_INT(MQTT_FH_QOS(pk.f.flags), 1, "delivered at the raised qos1");
+    mqtt_packet_cleanup(&pk);
+    cli_close(&sub);
+    cli_close(&pub);
+    test_end();
+}
+
+static void
+test_v5_unsubscribe_stops(void) {
+    cli_t sub, pub;
+    mqtt_packet_t ca, sa, ua, pk;
+    const char *f[] = {"ust/t"};
+    uint8_t o[] = {MQTT_QOS_0};
+
+    test_begin("v5 UNSUBSCRIBE stops further deliveries");
+    CHECK(cli_open(&sub, g_port_main, MQTT_VERSION_5) == 0, "sub open");
+    CHECK(cli_connect(&sub, "ust-sub", 1, 60, 0, 0, 0, 0, 0, 0, 0, MQTT_QOS_0, 0, &ca) == 0, "sub connack");
+    mqtt_packet_cleanup(&ca);
+    CHECK(cli_subscribe(&sub, 1, f, o, 0, 0) == 0, "subscribe");
+    CHECK(cli_wait(&sub, MQTT_SUBACK, 3000, &sa) == 0, "suback");
+    mqtt_packet_cleanup(&sa);
+
+    CHECK(cli_open(&pub, g_port_main, MQTT_VERSION_5) == 0, "pub open");
+    CHECK(cli_connect(&pub, "ust-pub", 1, 60, 0, 0, 0, 0, 0, 0, 0, MQTT_QOS_0, 0, &ca) == 0, "pub connack");
+    mqtt_packet_cleanup(&ca);
+
+    CHECK(cli_publish(&pub, "ust/t", MQTT_QOS_0, 0, "before", 0) == 0, "publish before unsub");
+    CHECK(cli_wait(&sub, MQTT_PUBLISH, 3000, &pk) == 0, "received before unsub");
+    CHECK(payload_eq(&pk, "before"), "payload before");
+    mqtt_packet_cleanup(&pk);
+
+    CHECK(cli_unsubscribe(&sub, 1, f, 0) == 0, "unsubscribe");
+    CHECK(cli_wait(&sub, MQTT_UNSUBACK, 3000, &ua) == 0, "unsuback");
+    CHECK_EQ_INT(unsuback_rc5(&ua, 0), MQTT_RC_SUCCESS, "unsub ok");
+    mqtt_packet_cleanup(&ua);
+
+    CHECK(cli_publish(&pub, "ust/t", MQTT_QOS_0, 0, "after", 0) == 0, "publish after unsub");
+    CHECK(cli_wait(&sub, MQTT_PUBLISH, 1500, &pk) == -1, "no delivery after unsub");
+    cli_close(&sub);
+    cli_close(&pub);
+    test_end();
+}
+
+static void
+test_v5_publish_no_subscribers(void) {
+    cli_t cli;
+    mqtt_packet_t ca, ack;
+    uint16_t id = 0;
+
+    test_begin("v5 qos1 publish with no subscribers is still acked");
+    CHECK(cli_open(&cli, g_port_main, MQTT_VERSION_5) == 0, "open");
+    CHECK(cli_connect(&cli, "ns-pub", 1, 60, 0, 0, 0, 0, 0, 0, 0, MQTT_QOS_0, 0, &ca) == 0, "connack");
+    mqtt_packet_cleanup(&ca);
+    CHECK(cli_publish(&cli, "ns/nobody", MQTT_QOS_1, 0, "into-the-void", &id) == 0, "publish");
+    CHECK(cli_wait(&cli, MQTT_PUBACK, 3000, &ack) == 0, "puback");
+    CHECK_EQ_INT(ack.v.puback.packet_id, id, "puback id");
+    CHECK_EQ_INT(ack.v.puback.v5.reason_code, MQTT_RC_SUCCESS, "puback rc");
+    mqtt_packet_cleanup(&ack);
+    cli_close(&cli);
+    test_end();
+}
+
+static void
+test_v5_multi_message_order(void) {
+    cli_t sub, pub;
+    mqtt_packet_t ca, sa, pk;
+    int i;
+    const char *f[] = {"ord/t"};
+    uint8_t o[] = {0};
+
+    test_begin("v5 consecutive qos0 messages are delivered in order");
+    CHECK(cli_open(&sub, g_port_main, MQTT_VERSION_5) == 0, "sub open");
+    CHECK(cli_connect(&sub, "ord-sub", 1, 60, 0, 0, 0, 0, 0, 0, 0, MQTT_QOS_0, 0, &ca) == 0, "sub connack");
+    mqtt_packet_cleanup(&ca);
+    CHECK(cli_subscribe(&sub, 1, f, o, 0, 0) == 0, "subscribe");
+    CHECK(cli_wait(&sub, MQTT_SUBACK, 3000, &sa) == 0, "suback");
+    mqtt_packet_cleanup(&sa);
+
+    CHECK(cli_open(&pub, g_port_main, MQTT_VERSION_5) == 0, "pub open");
+    CHECK(cli_connect(&pub, "ord-pub", 1, 60, 0, 0, 0, 0, 0, 0, 0, MQTT_QOS_0, 0, &ca) == 0, "pub connack");
+    mqtt_packet_cleanup(&ca);
+
+    for (i = 0; i < 5; i++) {
+        char msg[16];
+
+        snprintf(msg, sizeof(msg), "seq-%d", i);
+        CHECK(cli_publish(&pub, "ord/t", MQTT_QOS_0, 0, msg, 0) == 0, "publish");
+    }
+    for (i = 0; i < 5; i++) {
+        char want[16];
+
+        snprintf(want, sizeof(want), "seq-%d", i);
+        CHECK(cli_wait(&sub, MQTT_PUBLISH, 3000, &pk) == 0, "received");
+        CHECK(payload_eq(&pk, want), "payload in order");
+        mqtt_packet_cleanup(&pk);
+    }
+    CHECK(cli_wait(&sub, MQTT_PUBLISH, 1000, &pk) == -1, "no extra deliveries");
+    cli_close(&sub);
+    cli_close(&pub);
+    test_end();
+}
+
+static void
+test_v5_empty_payload(void) {
+    cli_t sub, pub;
+    mqtt_packet_t ca, sa, pk;
+    const char *f[] = {"ep/t"};
+    uint8_t o[] = {0};
+
+    test_begin("v5 empty payload publish is delivered");
+    CHECK(cli_open(&sub, g_port_main, MQTT_VERSION_5) == 0, "sub open");
+    CHECK(cli_connect(&sub, "ep-sub", 1, 60, 0, 0, 0, 0, 0, 0, 0, MQTT_QOS_0, 0, &ca) == 0, "sub connack");
+    mqtt_packet_cleanup(&ca);
+    CHECK(cli_subscribe(&sub, 1, f, o, 0, 0) == 0, "subscribe");
+    CHECK(cli_wait(&sub, MQTT_SUBACK, 3000, &sa) == 0, "suback");
+    mqtt_packet_cleanup(&sa);
+
+    CHECK(cli_open(&pub, g_port_main, MQTT_VERSION_5) == 0, "pub open");
+    CHECK(cli_connect(&pub, "ep-pub", 1, 60, 0, 0, 0, 0, 0, 0, 0, MQTT_QOS_0, 0, &ca) == 0, "pub connack");
+    mqtt_packet_cleanup(&ca);
+    CHECK(cli_publish(&pub, "ep/t", MQTT_QOS_0, 0, "", 0) == 0, "publish empty");
+
+    CHECK(cli_wait(&sub, MQTT_PUBLISH, 3000, &pk) == 0, "received");
+    CHECK_EQ_INT(pk.p.publish.message.n, 0, "empty payload");
+    CHECK(strcmp(cli_publish_topic(&sub, &pk), "ep/t") == 0, "topic");
+    mqtt_packet_cleanup(&pk);
+    cli_close(&sub);
+    cli_close(&pub);
+    test_end();
+}
+
+static void
 test_v5_props_passthrough(void) {
     cli_t sub, pub;
     mqtt_packet_t ca, sa, pk, pubpkt;
@@ -2930,6 +3150,12 @@ main(int argc, char *argv[]) {
     test_v5_qos1();
     test_v5_qos2();
     test_v5_qos_downgrade();
+    test_v5_multi_filter_subscribe();
+    test_v5_resubscribe_update();
+    test_v5_unsubscribe_stops();
+    test_v5_publish_no_subscribers();
+    test_v5_multi_message_order();
+    test_v5_empty_payload();
     test_v5_props_passthrough();
     test_v5_retained();
     test_v5_rap();
