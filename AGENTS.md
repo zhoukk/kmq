@@ -95,8 +95,10 @@ Broker behavior notes:
   result disconnects with 0x87 NOT_AUTHORIZED.
 - Fixed-header / options bitfields MUST match the wire format: PUBLISH byte is
   bit0=RETAIN, bits1-2=QoS, bit3=DUP, bits4-7=type (MQTT 3.1.1 §2.2.2/§3.3.1); SUBSCRIBE options byte is
-  bits2-3=QoS, bit4=No Local, bit5=RAP, bits6-7=Retain Handling (bits0-1
-  reserved). `__mqtt_packet_free` NULLs the array pointers it frees so a parse
+  bits0-1=QoS, bit2=No Local, bit3=RAP, bits4-5=Retain Handling (bits6-7
+  reserved). The v5 property-length field is a variable-byte integer (MQTT 5
+  §2.2.3), so a single `0x00` byte means "no properties" (`__properties_parse`
+  uses `mqtt_str_read_vbi`). `__mqtt_packet_free` NULLs the array pointers it frees so a parse
   failure after allocation cannot double-free on `mqtt_parser_unit`.
 
 ### Running the test clients
